@@ -1,134 +1,189 @@
 #!/usr/bin/env bash
 
-
-start_tomcat ()
+start_jetty ()
 {
+    log "INFO" "Starting Jetty Server ..."
 
-    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
-        echo "Please use systemctl start xwiki.service instead."
-        exit 1
-    fi
-
-    XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
-    if [[ ${UID} != "${XINIT_INSTALL_USER}" ]] ; then
-        echo "Please use the right user (${XINIT_INSTALL_USER}) to manage xwiki.service."
-        exit 1
-    fi
-
-	log "INFO" "Starting Tomcat Server ..."
-
-	if [[ -z "$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}')" ]]; then
-
-		if [[ "${CLEAN_TEMP_ON_STARTUP}" == "1" ]]; then
-			log "INFO" "Cleaning Tomcat's temp folder ... "
-			rm -rf "${TOMCAT_HOME}"/temp/*
-		fi
-
-		if [[ -e "${CATALINA_PID}" ]]; then
-
-			log "INFO" "Found catalina.pid file, removing it ... "
-			rm -f "${CATALINA_PID}"
-		fi
-		if [[ ${JVM_DEBUG} == yes ]]; then
-
-			log "INFO" "Debug mode activated!"
-			CATALINA_OPTS="${CATALINA_OPTS} ${JVM_DEBUG_OPTS}"
-		fi
-
-		# Stop OO Server if it is running (OO_SERVER_TYPE=0)
-		if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then 
-                        stop_openoffice
-                fi
-
-		# Start OpenOffice Daemon if OO_SERVER_TYPE=1
-                if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 1 ]]; then
-                        start_openoffice
-                fi
-
-		# Enable agent
-                if [[ -n "${JVM_AGENTPATH}" ]]; then
-			JAVA_OPTS="-agentpath:${JVM_AGENTPATH} ${JAVA_OPTS}"
-			export JAVA_OPTS
-		fi
-
+    if [[ -z "$(pgrep -f "${JETTY_PROCESS_NAME}")" ]]; then
         if [[ "${ROOT_INSTALL}" != "false" ]]; then
-            su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh start
+            su "${JETTY_USER}" -- "${JETTY_START_SCRIPT}"
         else
-            "${TOMCAT_HOME}"/bin/catalina.sh start
+            "${JETTY_START_SCRIPT}"
         fi
-		
-		# If enabled, make first request
-		if [[ ${MAKE_FIRST_REQUEST} == yes ]]; then
 
-			log "INFO" "Making first request ... "
-			sleep 7
-
-			check_http 1
-	
-		fi
-
-	else
-
-		log "WARNING" "Java process found! Stop tomcat first!"
-	fi
-
+        # If enabled, make the first request
+        if [[ ${MAKE_FIRST_REQUEST} == yes ]]; then
+            log "INFO" "Making first request ..."
+            sleep 7
+            check_http 1
+        fi
+    else
+        log "WARNING" "Jetty process found! Stop Jetty first!"
+    fi
 }
 
-stop_tomcat ()
+#start_tomcat ()
+#{
+#
+#    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
+#        echo "Please use systemctl start xwiki.service instead."
+#        exit 1
+#    fi
+#
+#    XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
+#    if [[ ${UID} != "${XINIT_INSTALL_USER}" ]] ; then
+#        echo "Please use the right user (${XINIT_INSTALL_USER}) to manage xwiki.service."
+#        exit 1
+#    fi
+#
+#	log "INFO" "Starting Tomcat Server ..."
+#
+#	if [[ -z "$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}')" ]]; then
+#
+#		if [[ "${CLEAN_TEMP_ON_STARTUP}" == "1" ]]; then
+#			log "INFO" "Cleaning Tomcat's temp folder ... "
+#			rm -rf "${TOMCAT_HOME}"/temp/*
+#		fi
+#
+#		if [[ -e "${CATALINA_PID}" ]]; then
+#
+#			log "INFO" "Found catalina.pid file, removing it ... "
+#			rm -f "${CATALINA_PID}"
+#		fi
+#		if [[ ${JVM_DEBUG} == yes ]]; then
+#
+#			log "INFO" "Debug mode activated!"
+#			CATALINA_OPTS="${CATALINA_OPTS} ${JVM_DEBUG_OPTS}"
+#		fi
+#
+#		# Stop OO Server if it is running (OO_SERVER_TYPE=0)
+#		if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then
+#                        stop_openoffice
+#                fi
+#
+#		# Start OpenOffice Daemon if OO_SERVER_TYPE=1
+#                if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 1 ]]; then
+#                        start_openoffice
+#                fi
+#
+#		# Enable agent
+#                if [[ -n "${JVM_AGENTPATH}" ]]; then
+#			JAVA_OPTS="-agentpath:${JVM_AGENTPATH} ${JAVA_OPTS}"
+#			export JAVA_OPTS
+#		fi
+#
+#        if [[ "${ROOT_INSTALL}" != "false" ]]; then
+#            su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh start
+#        else
+#            "${TOMCAT_HOME}"/bin/catalina.sh start
+#        fi
+#
+#		# If enabled, make first request
+#		if [[ ${MAKE_FIRST_REQUEST} == yes ]]; then
+#
+#			log "INFO" "Making first request ... "
+#			sleep 7
+#
+#			check_http 1
+#
+#		fi
+#
+#	else
+#
+#		log "WARNING" "Java process found! Stop tomcat first!"
+#	fi
+#
+#}
+
+stop_jetty ()
 {
-    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
-        echo "Please use systemctl stop xwiki.service instead."
-        exit 1
+    log "INFO" "Stopping Jetty ..."
+
+    if [[ "${ROOT_INSTALL}" != "false" ]]; then
+        su "${JETTY_USER}" -- "${JETTY_STOP_SCRIPT}"
+    else
+        "${JETTY_STOP_SCRIPT}"
+    fi
+}
+
+#stop_tomcat ()
+#{
+#    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
+#        echo "Please use systemctl stop xwiki.service instead."
+#        exit 1
+#    fi
+#
+#    XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
+#    if [[ ${UID} != "${XINIT_INSTALL_USER}" ]] ; then
+#        echo "Please use the right user (${XINIT_INSTALL_USER}) to manage xwiki.service."
+#        exit 1
+#    fi
+#
+#        log "INFO" "Stopping Tomcat ..."
+#
+#        if [[ "${ROOT_INSTALL}" != "false" ]]; then
+#            su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh stop
+#        else
+#            "${TOMCAT_HOME}"/bin/catalina.sh stop
+#        fi
+#
+#        sleep 3
+#
+#        if [[ -s ${CATALINA_PID} ]]; then
+#
+#                TOMCAT_PID="$(cat "${CATALINA_PID}")"
+#        else
+#
+#                TOMCAT_PID="$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}')"
+#        fi
+#
+#        if [[ -n "${TOMCAT_PID}" ]]; then
+#
+#                log "WARNING" "Java process still running. Killing it ..."
+#                for PID in ${TOMCAT_PID}
+#                        do
+#                        if [[ -n "$(ps -eo pid | grep "${PID}")" ]]; then
+#
+#                                kill -9 "${PID}"
+#                                sleep 2
+#                        fi
+#                        done
+#
+#                if [[ -e ${CATALINA_PID} ]]; then
+#
+#                        log "WARNING" "Pid file exists. Removing it ..."
+#                        rm -f "${CATALINA_PID}"
+#                fi
+#        fi
+#
+#	if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then
+#
+#		stop_openoffice
+#	fi
+#
+#}
+
+restart_jetty ()
+{
+    log "INFO" "Restarting Jetty ..."
+    KEEP_MAINTENANCE=0
+    if [[ -f ${VAR_DIR}/maintenance ]] ; then
+        log "WARNING" "Maintenance mode is already enabled."
+        KEEP_MAINTENANCE=1
+    elif [[ ${MAINTENANCE_ON_RESTARTS} == 1 ]] ; then
+        log "INFO" "Enabling maintenance mode for ${MAINTENANCE_TIME} seconds."
+        echo > "${VAR_DIR}/maintenance"
     fi
 
-    XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
-    if [[ ${UID} != "${XINIT_INSTALL_USER}" ]] ; then
-        echo "Please use the right user (${XINIT_INSTALL_USER}) to manage xwiki.service."
-        exit 1
+    stop_jetty
+    start_jetty
+
+    if [[ ${MAINTENANCE_ON_RESTARTS} == 1 ]] && [[ ${KEEP_MAINTENANCE} != 1 ]]; then
+        (
+            sleep "${MAINTENANCE_TIME}"
+            rm -f "${VAR_DIR}/maintenance"
+        ) &>/dev/null &
     fi
-
-        log "INFO" "Stopping Tomcat ..."
-
-        if [[ "${ROOT_INSTALL}" != "false" ]]; then
-            su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh stop
-        else
-            "${TOMCAT_HOME}"/bin/catalina.sh stop
-        fi
-
-        sleep 3
-
-        if [[ -s ${CATALINA_PID} ]]; then
-
-                TOMCAT_PID="$(cat "${CATALINA_PID}")"
-        else
-
-                TOMCAT_PID="$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}')"
-        fi
-
-        if [[ -n "${TOMCAT_PID}" ]]; then
-
-                log "WARNING" "Java process still running. Killing it ..."
-                for PID in ${TOMCAT_PID}
-                        do
-                        if [[ -n "$(ps -eo pid | grep "${PID}")" ]]; then
-
-                                kill -9 "${PID}"
-                                sleep 2
-                        fi
-                        done
-
-                if [[ -e ${CATALINA_PID} ]]; then
-
-                        log "WARNING" "Pid file exists. Removing it ..."
-                        rm -f "${CATALINA_PID}"
-                fi
-        fi
-
-	if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then
-
-		stop_openoffice
-	fi
-
 }
 
 restart_tomcat ()
@@ -197,53 +252,74 @@ maintenance_reminder ()
 
 check_proc ()
 {
-	echo -n "Checking Java process ... "
+    echo -n "Checking Jetty process ... "
 
-    CHECK_PROC_RESTART="true"
+    if [[ ${PROCESS_CHECK} != yes ]]; then
+        log "WARNING" "Process check is not enabled. Set PROCESS_CHECK=yes in xinit.cfg."
+        exit 1
+    fi
 
-	if [[ ${PROCESS_CHECK} != yes ]]; then
-
-		log "WARNING" "Check process functionality is not enabled. Please set PROCESS_CHECK=yes in xinit.cfg file to enable it. Bye Bye!"
-		exit 1
-	
-	# If pid file doesn't exists...
-	elif [[ ! -e ${CATALINA_PID} ]]; then
-
-		echo "FAILED"
-		log "CRITICAL" "Catalina pid file not found!"
-		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-			send_Notification "Catalina pid file not found!"
-			restart_tomcat
-		fi
-		
-	# If pid file exists but is empty
-	elif [[ ! -s ${CATALINA_PID} ]]; then
-	
-		echo "FAILED"
-		log "CRITICAL" "Void pid!"
-		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-			send_Notification "Void pid!"
-			restart_tomcat
-		fi
-
-	# If pid file exists but the pid listed in this file doesn't exists
-	elif [[ -s ${CATALINA_PID} ]]; then
-
-		pid="$(cat "${CATALINA_PID}")"
-		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
-			
-			echo "FAILED"
-			log "CRITICAL" "Java process died"
-			if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-				send_Notification "Java process died"
-				restart_tomcat
-			fi
-		else
-			echo "OK"
-		fi
-	fi
-
+    if [[ -z "$(pgrep -f "${JETTY_PROCESS_NAME}")" ]]; then
+        echo "FAILED"
+        log "CRITICAL" "Jetty process not found!"
+        if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
+            send_Notification "Jetty process not found!"
+            restart_jetty
+        fi
+    else
+        echo "OK"
+    fi
 }
+
+#check_proc ()
+#{
+#	echo -n "Checking Java process ... "
+#
+#    CHECK_PROC_RESTART="true"
+#
+#	if [[ ${PROCESS_CHECK} != yes ]]; then
+#
+#		log "WARNING" "Check process functionality is not enabled. Please set PROCESS_CHECK=yes in xinit.cfg file to enable it. Bye Bye!"
+#		exit 1
+#
+#	# If pid file doesn't exists...
+#	elif [[ ! -e ${CATALINA_PID} ]]; then
+#
+#		echo "FAILED"
+#		log "CRITICAL" "Catalina pid file not found!"
+#		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
+#			send_Notification "Catalina pid file not found!"
+#			restart_tomcat
+#		fi
+#
+#	# If pid file exists but is empty
+#	elif [[ ! -s ${CATALINA_PID} ]]; then
+#
+#		echo "FAILED"
+#		log "CRITICAL" "Void pid!"
+#		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
+#			send_Notification "Void pid!"
+#			restart_tomcat
+#		fi
+#
+#	# If pid file exists but the pid listed in this file doesn't exists
+#	elif [[ -s ${CATALINA_PID} ]]; then
+#
+#		pid="$(cat "${CATALINA_PID}")"
+#		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
+#
+#			echo "FAILED"
+#			log "CRITICAL" "Java process died"
+#			if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
+#				send_Notification "Java process died"
+#				restart_tomcat
+#			fi
+#		else
+#			echo "OK"
+#		fi
+#	fi
+#
+#}
 
 check_http ()
 {
@@ -366,9 +442,9 @@ show_help ()
 	echo
 	echo "	OPTIONS:"
 	echo
-	echo "		start			Start Tomcat server."
-	echo "		stop			Stop Tomcat server."
-	echo "		restart			Restart Tomcat server."
+	echo "		start			Start Jetty server."
+	echo "		stop			Stop Jetty server."
+	echo "		restart			Restart Jetty server."
 	echo "		report			Send report by email. See MAIL parameter in xinit.cfg"
 	echo "		show-report		Print a short report about xwiki/machine status."
 	echo "		list-parameters		Print all available parameters and current configuration."
@@ -578,21 +654,15 @@ get_info ()
 		fi
 	fi
 
-	echo "#####SECTION TOMCAT_LOGS#####" >> "${ATTACHE_FILE}"
+	echo "#####SECTION JETTY_LOGS#####" >> "${ATTACHE_FILE}"
     echo "" >> "${ATTACHE_FILE}"
 
-    HeapSpaceFound=0
-    PermgenSpaceFound=0
-
-    LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${TOMCAT_HOME}"/logs/catalina.out | tee -a "${ATTACHE_FILE}")"
-        if [[ $? == 0 ]] ; then
-                if grep -q -F "java.lang.OutOfMemoryError: Java heap space" <<< "${LAST_LOG_LINES}" ; then
-                        HeapSpaceFound=1
-                elif grep -q -F "java.lang.OutOfMemoryError: PermGen space" <<< "${LAST_LOG_LINES}" ; then
-                        PermgenSpaceFound=1
-                fi
-        fi
-	echo "" >> "${ATTACHE_FILE}"
+    if [ -e "${JETTY_LOG_FILE}" ]; then
+        LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${JETTY_LOG_FILE}" | tee -a "${ATTACHE_FILE}")"
+        # TODO : check for specific errors
+    else
+        echo "File not found: ${JETTY_LOG_FILE}. Skipping log output" >> "${ATTACHE_FILE}"
+    fi
 
 	echo "#####SECTION KILL_QUIT#####" >> "${ATTACHE_FILE}"
 

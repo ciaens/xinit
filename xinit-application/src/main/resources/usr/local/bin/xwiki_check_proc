@@ -1,0 +1,45 @@
+#!/bin/bash
+
+check_proc ()
+{
+	echo -n "Checking Java process ... "
+
+    CHECK_PROC_RESTART="true"
+
+	# If pid file doesn't exists...
+	if [[ ! -e ${LCK} ]]; then
+
+		echo "FAILED"
+		if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+			echo "CRITICAL : Jetty pid file not found!"
+			echo "Please restart XWiki"
+		fi
+
+	# If pid file exists but is empty
+	elif [[ ! -s ${LCK} ]]; then
+
+		echo "FAILED"
+		log "CRITICAL" "Void pid!"
+		if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+			echo "CRITICAL : Void pid!"
+			echo "Please restart XWiki"
+		fi
+
+	# If pid file exists but the pid listed in this file doesn't exists
+	elif [[ -s ${LCK} ]]; then
+
+		pid="$(cat "${LCK}")"
+		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
+
+			echo "FAILED"
+			if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+				echo "CRITICAL : Java process died"
+				echo "Please restart XWiki"
+			fi
+		else
+			echo "OK"
+		fi
+	fi
+}
+
+check_proc

@@ -1,0 +1,12 @@
+/usr/lib/xwiki-jetty/logs/*.log {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    copytruncate
+    delaycompress
+    postrotate
+        systemctl reload xwiki.service > /dev/null 2>/dev/null || true
+    endscript
+}
