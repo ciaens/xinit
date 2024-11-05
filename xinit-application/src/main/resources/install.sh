@@ -15,7 +15,7 @@ RESET=$(tput sgr0)
 
 echo ""
 echo "${BOLD}${BLUE}=================================================${RESET}"
-echo "${BOLD}${BLUE}           XWiki Management Installer            ${RESET}"
+echo "${BOLD}${BLUE}                 XWiki Installer                 ${RESET}"
 echo "${BOLD}${BLUE}=================================================${RESET}"
 echo ""
 
@@ -23,19 +23,14 @@ ask() {
     local prompt default reply
     prompt=$1
     default=$2
-
     if [ -n "$default" ]; then
         prompt="$prompt [$default]"
     fi
-
-    echo -n "$prompt: "
-    read reply
-
+    read -p "$prompt: " reply < /dev/tty
     if [ -z "$reply" ]; then
         reply=$default
     fi
-
-    echo $reply
+    echo "$reply"
 }
 
 # CHECK FOR ROOT FIRST
@@ -66,8 +61,8 @@ LOG_FILE=$(ask "Where the Xinit logs should be stored (default:/var/log/xwiki_he
 XWIKI_INSTALL_DIR=$(ask "Enter XWiki installation directory" "/usr/lib/xwiki-jetty/webapps/xwiki")
 
 CHECK_HTTP=$(ask "Enable HTTP health checks (YES/no)" "yes")
-EXPECT_HTTP_RESPONSE_CODE=$(ask "Expected HTTP response code from XWiki (e.g., 200, 302, 401)" "302")
-CHECK_HTTP_URL=$(ask "Full URL of the instance (default: empty)" "")
+EXPECT_HTTP_RESPONSE_CODE=$(ask "Expected HTTP response code from XWiki (e.g., 200, 302, 401)" "200")
+CHECK_HTTP_URL=$(ask "Root URL of the instance with this instance (default: http://localhost:8080)" "http://localhost:8080")
 echo "You can configure further the HTTP check in the xinit config file (/etc/xinit/xinit.cfg)"
 
 PROCESS_CHECK=$(ask "Enable process check (YES/no)" "yes")
@@ -300,9 +295,9 @@ CHECK_HTTP_URL=${CHECK_HTTP_URL}
 #HTACCESS_PASSWORD="password"
 
 # Http time parameters in sec.
-#CHECK_HTTP_TIMEOUT="50"
-#CHECK_HTTP_TRIES="2"
-#CHECK_HTTP_WAITRETRY="10"
+CHECK_HTTP_TIMEOUT=50
+CHECK_HTTP_TRIES=2
+CHECK_HTTP_WAITRETRY=10
 
 #################
 # Process Check #

@@ -1,5 +1,6 @@
 #!/bin/bash
 . /etc/xinit/xinit.cfg
+MAINTENANCE_FILE=${MAINTENANCE_FILE:-"/var/tmp/xwiki_maintenance"}
 
 if [[ -f "${MAINTENANCE_FILE}" ]]; then
     SUBJECT="XWiki Maintenance Mode Reminder"

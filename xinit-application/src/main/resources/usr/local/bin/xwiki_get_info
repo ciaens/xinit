@@ -4,6 +4,7 @@
 
 ATTACH_FILE="/tmp/xwiki_info_report.txt"
 LOG_LINES=20 # PRINT LESS LINES IN THIS REPORT
+XWIKI_INSTALL_DIR=${XWIKI_INSTALL_DIR:-"/usr/lib/xwiki-jetty/webapps/xwiki"}
 
 collect_info() {
     # Empty the file if it exists
@@ -63,17 +64,16 @@ collect_info() {
 		fi
 	elif [[ -s ${LCK} ]]; then
 		pid="$(cat "${LCK}")"
-		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
-
-			echo "FAILED" >> "${ATTACH_FILE}"
-			log "CRITICAL" "Java process died"
+		if ! ps --pid="${pid}" -o comm= | grep -q "java"; then
+			echo "CRITICAL : Jetty (Java) process died or wrong process is running" >> "${ATTACH_FILE}"
 			if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
                 echo "" >> "${ATTACH_FILE}"
 				echo "Java process died" >> "${ATTACH_FILE}"
                 echo "" >> "${ATTACH_FILE}"
 			fi
 		else
-			echo "OK"
+            echo "" >> "${ATTACH_FILE}"
+            echo "Jetty process is running fine with PID: $pid" >> "${ATTACH_FILE}"
 		fi
 	fi
 

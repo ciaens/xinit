@@ -8,8 +8,8 @@
 
 MYSQL_USER="${MYSQL_USER}"
 MYSQL_PASSWORD="${MYSQL_PASSWORD}"
-MYSQL_HOST="${MYSQL_HOST}"
-SPAM_THRESHOLD="${SPAM_THRESHOLD}"
+MYSQL_HOST="${MYSQL_HOST:-localhost}"
+SPAM_THRESHOLD="${SPAM_THRESHOLD:-50}"
 
 DBS=$(mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" -h"${MYSQL_HOST}" -N -e "SHOW DATABASES;" | grep -Ev "(information_schema|mysql|performance_schema|sys)")
 

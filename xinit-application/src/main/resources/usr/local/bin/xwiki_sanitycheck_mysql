@@ -7,7 +7,7 @@
 
 MYSQL_USER="${MYSQL_USER}"
 MYSQL_PASSWORD="${MYSQL_PASSWORD}"
-MYSQL_HOST="${MYSQL_HOST}"
+MYSQL_HOST="${MYSQL_HOST:-localhost}"
 DB_NAME="${DB_NAME}"
 
 echo "Running sanity check on database ${DB_NAME}..."
