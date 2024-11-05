@@ -1,5 +1,5 @@
 #!/bin/bash
-
+. /etc/xinit/xinit.cfg
 check_proc ()
 {
 	echo -n "Checking Java process ... "
@@ -10,7 +10,7 @@ check_proc ()
 	if [[ ! -e ${LCK} ]]; then
 
 		echo "FAILED"
-		if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+		if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
 			echo "CRITICAL : Jetty pid file not found!"
 			echo "Please restart XWiki"
 		fi
@@ -20,7 +20,7 @@ check_proc ()
 
 		echo "FAILED"
 		log "CRITICAL" "Void pid!"
-		if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+		if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
 			echo "CRITICAL : Void pid!"
 			echo "Please restart XWiki"
 		fi
@@ -32,7 +32,7 @@ check_proc ()
 		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
 
 			echo "FAILED"
-			if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+			if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
 				echo "CRITICAL : Java process died"
 				echo "Please restart XWiki"
 			fi

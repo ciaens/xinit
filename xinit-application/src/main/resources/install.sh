@@ -170,13 +170,7 @@ LOG_FILE=/var/log/xwiki_health_check.log
 # is installed.
 # The "/usr/lib/xwiki-jetty/webapps/xwiki" folder is a symlink to "/usr/lib/jetty"
 # Default value: "/usr/lib/xwiki-jetty/webapps/xwiki"
-
-# XWiki Installation Directory
 XWIKI_INSTALL_DIR=${XWIKI_INSTALL_DIR}
-
-# VAR_DIR: Specifies where to store temporary data needed by the program
-# Default value: "/var/run/xinit"
-#VAR_DIR="/var/run/xinit"
 
 # KILL_QUIT_TIME_WAIT: Use this parameter to set how much time (in seconds)
 # to wait after kill -QUIT command is executed.
@@ -424,9 +418,10 @@ echo ""
 echo "${BOLD}${GREEN}=================================================${RESET}"
 echo "${BOLD}${GREEN}          XWiki Management Installation          ${RESET}"
 echo "${BOLD}${GREEN}                   Complete!                     ${RESET}"
+echo "${BOLD}${GREEN}=================================================${RESET}"
+echo ""
 echo "${BOLD}${GREEN}         Don't forget to check xinit.cfg         ${RESET}"
 echo "${BOLD}${GREEN}            For Further customisation            ${RESET}"
-echo "${BOLD}${GREEN}=================================================${RESET}"
 echo ""
 echo "You can manage XWiki using the '${BOLD}xwiki${RESET}' command."
 echo "For help, run '${BOLD}xwiki help${RESET}'."

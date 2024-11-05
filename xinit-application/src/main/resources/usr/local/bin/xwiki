@@ -19,19 +19,19 @@ case "${COMMAND}" in
     maintenance)
         /usr/local/bin/xwiki_maintenance "$@"
         ;;
-    check-proc)
+    check-proc|-cp)
         /usr/local/bin/xwiki_check_proc "$@"
         ;;
-    get-info)
+    get-info|-gi)
         /usr/local/bin/xwiki_get_info "$@"
         ;;
-    send-report)
+    send-report|-sr)
         /usr/local/bin/xwiki_send_report "$@"
         ;;
-    list-parameters)
+    list-parameters|-lp)
         /usr/local/bin/xwiki_list_parameters "$@"
         ;;
-    check-dependencies)
+    check-dependencies|-cd)
         /usr/local/bin/xwiki_check_dependencies "$@"
         ;;
     sanitycheck-mysql)

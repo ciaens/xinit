@@ -1,7 +1,5 @@
 #!/bin/bash
-
 . /etc/xinit/xinit.cfg
-EMAIL_RECIPIENTS="${MAIL}"
 
 if [[ -f "${MAINTENANCE_FILE}" ]]; then
     SUBJECT="XWiki Maintenance Mode Reminder"

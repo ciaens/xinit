@@ -1,6 +1,5 @@
 #!/bin/bash
-
-MAINTENANCE_FILE="/var/tmp/xwiki_maintenance"
+. /etc/xinit/xinit.cfg
 
 case "$1" in
     on)

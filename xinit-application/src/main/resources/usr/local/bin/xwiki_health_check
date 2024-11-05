@@ -3,10 +3,6 @@
 # load config
 . /etc/xinit/xinit.cfg
 
-URL="http://localhost:${JETTY_PORT}/bin/view/Main/"
-EXPECTED_STATUS="${EXPECT_HTTP_RESPONSE_CODE}"
-ENABLED="${SEND_MAIL_NOTIFICATION}"
-LOG_LINES="${LOG_LINE_NUMBER}"
 ATTACH_FILE="/tmp/xwiki_health_check_report.txt"
 REQUEST_ERROR_OUTPUT="/tmp/request_error_output.txt"
 
@@ -66,13 +62,13 @@ collect_info() {
 	# If pid file doesn't exists...
 	if [[ ! -e ${LCK} ]]; then
 		echo "FAILED"
-		if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+		if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
 			echo "CRITICAL : Jetty pid file not found!"
 		fi
 	# If pid file exists but is empty
 	elif [[ ! -s ${LCK} ]]; then
 		echo "FAILED"
-		if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+		if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
 			log "CRITICAL" "Void pid!"
 		fi
 	# If pid file exists but the pid listed in this file doesn't exists
@@ -80,7 +76,7 @@ collect_info() {
 		pid="$(cat "${LCK}")"
 		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
 			echo "FAILED"
-			if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+			if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
 				log "CRITICAL" "Java process died"
 			fi
 		else
@@ -92,7 +88,7 @@ collect_info() {
     # Find the most recent jetty.log file
     LATEST_JETTY_LOG=$(ls -1t "${JETTY_BASE}/logs/"*.jetty.log 2>/dev/null | head -n 1)
     if [[ -f "${LATEST_JETTY_LOG}" ]]; then
-        tail -n ${LOG_LINES} "${LATEST_JETTY_LOG}" >> "${ATTACH_FILE}"
+        tail -n ${LOG_LINE_NUMBER} "${LATEST_JETTY_LOG}" >> "${ATTACH_FILE}"
     else
         echo "XWiki log file not found in ${JETTY_BASE}/logs/" >> "${ATTACH_FILE}"
     fi
@@ -117,7 +113,7 @@ collect_info() {
     fi
 
     echo "##### MAINTENANCE STATUS #####" >> "${ATTACH_FILE}"
-    if [[ -f "/var/tmp/xwiki_maintenance" ]]; then
+    if [[ -f ${MAINTENANCE_FILE} ]]; then
         echo "Maintenace mode is ENABLED !!" >> "${ATTACH_FILE}"
     else
         echo "Maintenance mode is DISABLED (Good)" >> "${ATTACH_FILE}"
@@ -204,7 +200,7 @@ check_http() {
 
     if [[ "${RESPONSE_CODE_MATCH}" -ne 1 ]]; then
         if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
-            systemctl restart xwiki.service
+            FAILURE_REASON="CRITICAL! : Wiki not responding!"
         else
             log "CRITICAL" "Wiki not responding! Response: ${RESPONSE_CODE}, Expected: ${EXPECT_HTTP_RESPONSE_CODE}, Exit: ${EXIT_CODE}"
         fi
@@ -220,7 +216,7 @@ check_http() {
 ####################
 
 # skips health check if in maintenance mode
-if [[ -f "/var/tmp/xwiki_maintenance" ]]; then
+if [[ -f ${MAINTENANCE_FILE} ]]; then
     log "INFO" "Maintenance mode is ON. Skipping health check."
     exit 0
 fi
@@ -230,12 +226,12 @@ FAILURE_REASON=""
 if [[ "${PROCESS_CHECK}" == "yes" ]]; then
     echo -n "Checking Java process ... "
     if [[ ! -e ${LCK} ]]; then
-        if [[ "$1" -ne 1 ]] && [[ ! -f "/var/tmp/xwiki_maintenance" ]]; then
+        if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
             log "CRITICAL" "Jetty pid file not found!"
             FAILURE_REASON="Critical : Jetty pid file not found!"
         fi
     elif [[ ! -s ${LCK} ]]; then
-        if [[ "$1" -ne 1 ]] && [[ ! -f "/var/tmp/xwiki_maintenance" ]]; then
+        if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
             log "CRITICAL" "Void pid!"
             FAILURE_REASON="Critical : Void pid!"
         fi
@@ -243,7 +239,7 @@ if [[ "${PROCESS_CHECK}" == "yes" ]]; then
         pid="$(cat "${LCK}")"
         if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
             log "CRITICAL" "Java process died"
-            if [[ "$1" -ne 1 ]] && [[ ! -f /var/tmp/xwiki_maintenance ]]; then
+            if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
                 FAILURE_REASON="CRITICAL : Java process died"
             fi
         else
@@ -266,7 +262,7 @@ if [[ -n "${FAILURE_REASON}" ]]; then
 
     SHORT_MESSAGE="XWiki Health Alert - ${FAILURE_REASON}"
 
-    if [[ "${ENABLED}" == "yes" ]]; then
+    if [[ "${SEND_MAIL_NOTIFICATION}" == "yes" ]]; then
         send_Mail "${SHORT_MESSAGE}"
     fi
 fi

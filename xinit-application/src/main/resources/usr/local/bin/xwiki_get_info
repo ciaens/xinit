@@ -3,8 +3,7 @@
 . /etc/xinit/xinit.cfg
 
 ATTACH_FILE="/tmp/xwiki_info_report.txt"
-LOG_LINES="20"
-LCK="/usr/lib/xwiki-jetty/tmp/xwiki-8080.lck"
+LOG_LINES=20 # PRINT LESS LINES IN THIS REPORT
 
 collect_info() {
     # Empty the file if it exists
@@ -34,7 +33,7 @@ collect_info() {
     echo "##### IP ADDRESSES #####" >> "${ATTACH_FILE}"
     /sbin/ifconfig | grep 'inet ' | awk '{print $2}' >> "${ATTACH_FILE}"
     echo "" >> "${ATTACH_FILE}"
--
+    
     echo "##### DISK USAGE #####" >> "${ATTACH_FILE}"
     df -h >> "${ATTACH_FILE}"
     echo "" >> "${ATTACH_FILE}"
@@ -44,31 +43,34 @@ collect_info() {
     echo "" >> "${ATTACH_FILE}"
 
     echo "##### JETTY PROCESS CHECK #####" >> "${ATTACH_FILE}"
-    echo -n "Checking Java process ... "
+    echo -n "Checking Java process ... " >> "${ATTACH_FILE}"
     CHECK_PROC_RESTART="true"
 	if [[ ! -e ${LCK} ]]; then
-		echo "FAILED"
+		echo "FAILED" >> "${ATTACH_FILE}"
 		log "CRITICAL" "Jetty pid file not found!"
-		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-			send_Notification "Jetty pid file not found!"
-			systemctl restart xwiki.service
+		if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
+            echo "" >> "${ATTACH_FILE}"
+			echo "Jetty pid file not found!" >> "${ATTACH_FILE}"
+            echo "" >> "${ATTACH_FILE}"
 		fi
 	elif [[ ! -s ${LCK} ]]; then
-		echo "FAILED"
+		echo "FAILED" >> "${ATTACH_FILE}"
 		log "CRITICAL" "Void pid!"
-		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-			send_Notification "Void pid!"
-			systemctl restart xwiki.service
+		if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
+            echo "" >> "${ATTACH_FILE}"
+			echo "Void pid!" >> "${ATTACH_FILE}"
+            echo "" >> "${ATTACH_FILE}"
 		fi
 	elif [[ -s ${LCK} ]]; then
 		pid="$(cat "${LCK}")"
 		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
 
-			echo "FAILED"
+			echo "FAILED" >> "${ATTACH_FILE}"
 			log "CRITICAL" "Java process died"
-			if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-				send_Notification "Java process died"
-				systemctl restart xwiki.service
+			if [[ "$1" -ne 1 ]] && [[ ! -f ${MAINTENANCE_FILE} ]]; then
+                echo "" >> "${ATTACH_FILE}"
+				echo "Java process died" >> "${ATTACH_FILE}"
+                echo "" >> "${ATTACH_FILE}"
 			fi
 		else
 			echo "OK"
@@ -93,7 +95,7 @@ collect_info() {
     elif grep -q "java.lang.OutOfMemoryError: PermGen space" "${ATTACH_FILE}"; then
         PERMGEN_SPACE_ISSUE=1
     fi
-    #set the mail title accordingly
+    #set the title accordingly
     if [[ "${HEAP_SPACE_ISSUE}" -eq 1 ]]; then
         MemoryPrefix="[Low Heap]"
     elif [[ "${PERMGEN_SPACE_ISSUE}" -eq 1 ]]; then
@@ -103,7 +105,7 @@ collect_info() {
     fi
 
     echo "##### MAINTENANCE STATUS #####" >> "${ATTACH_FILE}"
-    if [[ -f "/var/tmp/xwiki_maintenance" ]]; then
+    if [[ -f ${MAINTENANCE_FILE} ]]; then
         echo "Maintenace mode is ENABLED !!" >> "${ATTACH_FILE}"
     else
         echo "Maintenance mode is DISABLED (Good)" >> "${ATTACH_FILE}"
