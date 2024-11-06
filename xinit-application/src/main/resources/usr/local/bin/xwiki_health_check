@@ -200,7 +200,7 @@ check_http() {
         curl_options+=("-u" "${HTACCESS_USERNAME}:${HTACCESS_PASSWORD}")
     fi
 
-    RESPONSE_CODE=$(curl "${curl_options[@]}" "${url_to_check}" 2 >"${REQUEST_ERROR_OUTPUT}")
+    RESPONSE_CODE=$(curl "${curl_options[@]}" "${url_to_check}" 2> "${REQUEST_ERROR_OUTPUT}")
     EXIT_CODE="$?"
 
     # DNS check (error code 6 indicates a DNS problem)
