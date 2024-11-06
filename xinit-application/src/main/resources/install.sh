@@ -57,12 +57,12 @@ echo ""
 SEND_MAIL_NOTIFICATION=$(ask "Do you want to send email notifications (yes/no)" "yes")
 MAIL=$(ask "Enter email address(es) for notifications (comma-separated)" "admin@example.com")
 LOG_LINE_NUMBER=$(ask "How many log lines to include in notifications (default: )" "2000")
-LOG_FILE=$(ask "Where the Xinit logs should be stored (default:/var/log/xwiki_health_check.log)" "/var/log/xwiki_health_check.log")
+LOG_FILE=$(ask "Where the Xinit logs should be stored (default:/var/log/xwiki-health-check/xinit.log)" "/var/log/xwiki-health-check/xinit.log")
 XWIKI_INSTALL_DIR=$(ask "Enter XWiki installation directory" "/usr/lib/xwiki-jetty/webapps/xwiki")
 
 CHECK_HTTP=$(ask "Enable HTTP health checks (YES/no)" "yes")
 EXPECT_HTTP_RESPONSE_CODE=$(ask "Expected HTTP response code from XWiki (e.g., 200, 302, 401)" "200")
-CHECK_HTTP_URL=$(ask "Root URL of the instance with this instance (default: http://localhost:8080)" "http://localhost:8080")
+CHECK_HTTP_URL=$(ask "Root URL of the instance (default: http://localhost:8080)" "http://localhost:8080")
 echo "You can configure further the HTTP check in the xinit config file (/etc/xinit/xinit.cfg)"
 
 PROCESS_CHECK=$(ask "Enable process check (YES/no)" "yes")
@@ -125,7 +125,7 @@ LOG_LINE_NUMBER="${LOG_LINE_NUMBER}"
 
 # LOG_FILE_LOCATION : Where the logs for Xinit should be located
 # Default: /var/log/xwiki_health_check.log
-LOG_FILE=/var/log/xwiki_health_check.log
+LOG_FILE="${LOG_FILE}"
 
 # CONNECTION_STATE_PORTS: You can use this parameter to specify the TCP ports
 # for which you want to receive connection state information(ESTABLISHED,
@@ -340,16 +340,14 @@ EOL
 
 echo "${GREEN}Configuration file /etc/xinit/xinit.cfg created.${RESET}"
 
-### DISABLED BECAUSE FIND USELESS AFTERALL,
-### JETTY ALREADY ROTATES THE LOGS
 # SETUP LOGROTATE
-#echo ""
-#echo "${BOLD}Installing logrotate configuration...${RESET}"
-#if cp "${SCRIPT_DIR}/etc/logrotate.d/xwiki" /etc/logrotate.d/xwiki; then
-#    echo "${GREEN}Logrotate configuration installed at /etc/logrotate.d/xwiki.${RESET}"
-#else
-#    echo "${RED}Failed to install logrotate configuration.${RESET}"
-#fi
+echo ""
+echo "${BOLD}Installing logrotate configuration...${RESET}"
+if cp "${SCRIPT_DIR}/etc/logrotate.d/xinit" /etc/logrotate.d/xwiki; then
+    echo "${GREEN}Logrotate configuration installed at /etc/logrotate.d/xinit.${RESET}"
+else
+    echo "${RED}Failed to install logrotate configuration.${RESET}"
+fi
 
 # SETUP SYSTEMD
 echo ""

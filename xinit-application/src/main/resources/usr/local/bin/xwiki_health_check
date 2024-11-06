@@ -13,7 +13,7 @@ LCK=${LCK:-"/usr/lib/xwiki-jetty/tmp/xwiki-8080.lck"}
 MAINTENANCE_FILE=${MAINTENANCE_FILE:-"/var/tmp/xwiki_maintenance"}
 JETTY_BASE=${JETTY_BASE:-"/usr/lib/xwiki-jetty"}
 XWIKI_INSTALL_DIR=${XWIKI_INSTALL_DIR:-"/usr/lib/xwiki-jetty/webapps/xwiki"}
-LOG_FILE=${LOG_FILE:-"/var/log/xwiki_health_check.log"}
+LOG_FILE=${LOG_FILE:-"/var/log/xwiki-health-check/xinit.log"}
 
 log ()
 {

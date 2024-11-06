@@ -25,7 +25,7 @@ Configuration is located in /etc/xinit/xinit.cfg with sensible defaults.
 
 Change Log
 ==========
-### Xinit Version JETTY-1.0 - 01/11/2024
+### Xinit Version 1.4-JETTY - 01/11/2024
 * Splitted the functions in multiples independant scripts
 * Centralized configuration in xinit.cfg
 * General use of systemd for services and timers

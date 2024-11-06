@@ -1,15 +1,18 @@
 #!/bin/bash
 . /etc/xinit/xinit.cfg
 MAINTENANCE_FILE=${MAINTENANCE_FILE:-"/var/tmp/xwiki_maintenance"}
+LOG_FILE=${LOG_FILE=-"/var/log/xwiki-health-check/xinit.log"}
 
 case "$1" in
     on)
         touch "${MAINTENANCE_FILE}"
         echo "Maintenance mode enabled."
+        LOG "INFO" "Maintenance mode enabled."
         ;;
     off)
         rm -f "${MAINTENANCE_FILE}"
         echo "Maintenance mode disabled."
+        LOG "INFO" "Maintenance mode disabled."
         ;;
     status)
         if [[ -f "${MAINTENANCE_FILE}" ]]; then
@@ -22,3 +25,17 @@ case "$1" in
         echo "Usage: xwiki_maintenance.sh [on|off|status]"
         ;;
 esac
+
+
+log ()
+{
+    local severity="$1"
+    local message="$2"
+    local _date
+    local _time
+    _date="$(date +%d-%m-%Y)"
+    _time="$(date +%T)"
+
+    echo "${_date} ${_time} [${severity}]: ${message}" >>"${LOG_FILE}"
+    echo "${message}"
+}
