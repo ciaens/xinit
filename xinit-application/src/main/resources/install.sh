@@ -340,6 +340,43 @@ EOL
 
 echo "${GREEN}Configuration file /etc/xinit/xinit.cfg created.${RESET}"
 
+# CHECK LOG FOLDERS AND SET PERMISSIONS
+echo ""
+echo "${BOLD}Checking logs configuration...${RESET}"
+
+XWIKI_LOG_DIR="/var/log/xwiki" # NOTE : that assumes there is a link between the JETTY_BASE/logs and the /var/log/xwiki folder
+
+if [ ! -d "$XWIKI_LOG_DIR" ]; then
+    mkdir -p "$XWIKI_LOG_DIR"
+    echo "${GREEN}Created directory $XWIKI_LOG_DIR.${RESET}"
+else
+    echo "${YELLOW}Directory $XWIKI_LOG_DIR already exists.${RESET}"
+fi
+
+chown -R ${JETTY_USER}:${JETTY_USER} "$XWIKI_LOG_DIR"
+chmod 750 "$XWIKI_LOG_DIR"
+echo "${GREEN}Set permissions for $XWIKI_LOG_DIR (owner: ${JETTY_USER}).${RESET}"
+
+if [ -f /etc/xinit/xinit.cfg ]; then
+    source /etc/xinit/xinit.cfg
+    if [ -n "$LOG_FILE" ]; then
+        CUSTOM_LOG_DIR=$(dirname "$LOG_FILE")
+        if [ ! -d "$CUSTOM_LOG_DIR" ]; then
+            mkdir -p "$CUSTOM_LOG_DIR"
+            echo "${GREEN}Created custom log directory $CUSTOM_LOG_DIR.${RESET}"
+        else
+            echo "${YELLOW}Custom log directory $CUSTOM_LOG_DIR already exists.${RESET}"
+        fi
+        chown -R ${JETTY_USER}:${JETTY_USER} "$CUSTOM_LOG_DIR"
+        chmod 750 "$CUSTOM_LOG_DIR"
+        echo "${GREEN}Set permissions for $CUSTOM_LOG_DIR (owner: ${JETTY_USER}).${RESET}"
+    else
+        echo "${YELLOW}LOG_FILE is not set in /etc/xinit/xinit.cfg. Skipping creation of custom log directory.${RESET}"
+    fi
+else
+    echo "${RED}ERROR: /etc/xinit/xinit.cfg not found.${RESET}"
+fi
+
 # SETUP LOGROTATE
 echo ""
 echo "${BOLD}Installing logrotate configuration...${RESET}"

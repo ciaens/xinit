@@ -1,4 +1,4 @@
-/usr/lib/xwiki-jetty/logs/*.log {
+/var/log/xwiki-health-check/*.log {
     daily
     rotate 14
     compress
@@ -7,6 +7,6 @@
     copytruncate
     delaycompress
     postrotate
-        systemctl reload xwiki.service > /dev/null 2>/dev/null || true
+        systemctl reload xwiki-healthcheck.service > /dev/null 2>/dev/null || true
     endscript
 }
