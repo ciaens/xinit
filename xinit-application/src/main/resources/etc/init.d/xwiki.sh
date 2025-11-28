@@ -80,7 +80,7 @@ case "$1" in
 		stop_tomcat
 		;;
 	restart)
-		restart_tomcat
+		restart_container
 		;;
 	report) 
 		send_report
@@ -124,11 +124,11 @@ case "$1" in
 		    exit 1
 		fi
 		;;
-	sanitycheck-mysql)
-		run_sanitycheck_mysql
+	sanitycheck-db)
+		run_sanitycheck_db
 		;;
-	spamdetection-mysql)
-		run_spamdetection_mysql
+	spamdetection-db)
+		run_spamdetection_db
 		;;
 	check-install)
 		check_install

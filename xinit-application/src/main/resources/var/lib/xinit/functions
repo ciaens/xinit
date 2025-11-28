@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 
 
-start_tomcat ()
+start_container ()
 {
-
-    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
-        echo "Please use systemctl start xwiki.service instead."
-        exit 1
+    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
+        if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
+             if [[ ${UID} -eq "0" ]] ; then
+                systemctl start xwiki.service
+             else
+                sudo systemctl start xwiki.service
+             fi
+             exit 0
+        fi
+        # If launched by systemd, we proceed (but typically xinit is not the executable for systemd anymore).
+        # However, if xinit IS the ExecStart, we continue.
     fi
 
     XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
@@ -15,7 +22,7 @@ start_tomcat ()
         exit 1
     fi
 
-	log "INFO" "Starting Tomcat Server ..."
+	log "INFO" "Starting Container (${CONTAINER_TYPE}) ..."
 
 	if [[ -z "$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}')" ]]; then
 
@@ -23,6 +30,15 @@ start_tomcat ()
 			log "INFO" "Cleaning Tomcat's temp folder ... "
 			rm -rf "${TOMCAT_HOME}"/temp/*
 		fi
+
+        # Log Rotation (Legacy)
+        if [[ -f "${TOMCAT_HOME}/logs/catalina.out" ]]; then
+            LOG_SIZE=$(stat -c%s "${TOMCAT_HOME}/logs/catalina.out")
+            if [[ ${LOG_SIZE} -gt ${LOG_ROTATE_SIZE} ]]; then
+                log "INFO" "Rotating catalina.out (Size: ${LOG_SIZE})..."
+                mv "${TOMCAT_HOME}/logs/catalina.out" "${TOMCAT_HOME}/logs/catalina.out.$(date +%Y%m%d-%H%M%S)"
+            fi
+        fi
 
 		if [[ -e "${CATALINA_PID}" ]]; then
 
@@ -51,34 +67,57 @@ start_tomcat ()
 			export JAVA_OPTS
 		fi
 
-        if [[ "${ROOT_INSTALL}" != "false" ]]; then
-            su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh start
+        if [[ "${CONTAINER_TYPE}" == "tomcat" ]]; then
+            if [[ "${ROOT_INSTALL}" != "false" ]]; then
+                su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh start
+            else
+                "${TOMCAT_HOME}"/bin/catalina.sh start
+            fi
         else
-            "${TOMCAT_HOME}"/bin/catalina.sh start
+            log "WARNING" "Manual start for container type ${CONTAINER_TYPE} is not fully implemented in legacy mode. Use systemd."
         fi
 		
 		# If enabled, make first request
-		if [[ ${MAKE_FIRST_REQUEST} == yes ]]; then
+		if [[ -n "${MAKE_FIRST_REQUEST}" && "${MAKE_FIRST_REQUEST}" != "no" ]]; then
 
-			log "INFO" "Making first request ... "
+			log "INFO" "Making first request(s) ... "
 			sleep 7
 
-			check_http 1
+            if [[ "${MAKE_FIRST_REQUEST}" == "yes" ]]; then
+			    check_http 1
+            else
+                for url in $(echo "${MAKE_FIRST_REQUEST}" | tr ',' '\n'); do
+                    log "INFO" "Requesting ${url} ..."
+                    # Temporarily override CHECK_HTTP_URL
+                    OLD_URL="${CHECK_HTTP_URL}"
+                    CHECK_HTTP_URL="${url}"
+                    check_http 1
+                    CHECK_HTTP_URL="${OLD_URL}"
+                done
+            fi
 	
 		fi
 
 	else
 
-		log "WARNING" "Java process found! Stop tomcat first!"
+		log "WARNING" "Java process found! Stop container first!"
 	fi
 
 }
+# Backward compatibility
+start_tomcat () { start_container; }
 
-stop_tomcat ()
+stop_container ()
 {
-    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
-        echo "Please use systemctl stop xwiki.service instead."
-        exit 1
+    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
+         if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
+             if [[ ${UID} -eq "0" ]] ; then
+                systemctl stop xwiki.service
+             else
+                sudo systemctl stop xwiki.service
+             fi
+             exit 0
+         fi
     fi
 
     XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
@@ -87,12 +126,14 @@ stop_tomcat ()
         exit 1
     fi
 
-        log "INFO" "Stopping Tomcat ..."
+        log "INFO" "Stopping Container ..."
 
-        if [[ "${ROOT_INSTALL}" != "false" ]]; then
-            su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh stop
-        else
-            "${TOMCAT_HOME}"/bin/catalina.sh stop
+        if [[ "${CONTAINER_TYPE}" == "tomcat" ]]; then
+            if [[ "${ROOT_INSTALL}" != "false" ]]; then
+                su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh stop
+            else
+                "${TOMCAT_HOME}"/bin/catalina.sh stop
+            fi
         fi
 
         sleep 3
@@ -130,8 +171,10 @@ stop_tomcat ()
 	fi
 
 }
+# Backward compatibility
+stop_tomcat () { stop_container; }
 
-restart_tomcat ()
+restart_container ()
 {
 
     if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] && [[ ${CHECK_PROC_RESTART} != "true" ]] && [[ ${CHECK_HTTP_RESTART} != "true" ]] ; then
@@ -139,7 +182,7 @@ restart_tomcat ()
         exit 1
     fi
 
-        log "INFO" "Restarting Tomcat ..."
+        log "INFO" "Restarting Container (${CONTAINER_TYPE}) ..."
 	KEEP_MAINTENANCE=0
 	if [[ -f ${VAR_DIR}/maintenance ]] ; then
 	  log "WARNING" "Maintenance mode is already enabled. You will need to delete ${VAR_DIR}/maintenance file by hand or disable maintenance mode."
@@ -149,14 +192,36 @@ restart_tomcat ()
 	  echo>"${VAR_DIR}/maintenance"
 	fi
 
-    if [[ ${UID} -eq "0" ]] ; then
-        systemctl stop xwiki.service
-        systemctl start xwiki.service
-        # if xinit is not running as ROOT, then elevated privileges are needed
+    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
+        if [[ ${UID} -eq "0" ]] ; then
+             systemctl restart xwiki.service
+        else
+             # Non-root strategy: Kill the process and let Systemd restart it (Restart=on-failure/always)
+             # We assume we have permissions to signal the process (running as same user)
+             
+             # Try getting PID from file first
+             local pid=""
+             if [[ -s "${CATALINA_PID}" ]]; then
+                pid="$(cat "${CATALINA_PID}")"
+             fi
+             
+             # Fallback to pgrep
+             if [[ -z "${pid}" ]]; then
+                pid="$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}' | head -n 1)"
+             fi
+             
+             if [[ -n "${pid}" ]]; then
+                 log "INFO" "Non-root user: Killing process ${pid} to trigger Systemd restart..."
+                 kill -9 "${pid}"
+             else
+                 log "WARNING" "Process not found. Attempting 'systemctl start' (may require privileges)..."
+                 systemctl start xwiki.service || log "ERROR" "Failed to start service. Privileges might be required."
+             fi
+        fi
     else
-        sudo systemctl stop xwiki.service
-        sudo systemctl start xwiki.service
-
+        # Legacy manual restart
+        stop_container
+        start_container
     fi
    
 	if [[ ${MAINTENANCE_ON_RESTARTS} == 1 ]] && [[ ${KEEP_MAINTENANCE} != 1 ]]; then
@@ -170,6 +235,8 @@ restart_tomcat ()
 	fi
  
 }
+# Backward compatibility
+restart_tomcat () { restart_container; }
 
 maintenance_reminder ()
 {
@@ -197,7 +264,7 @@ maintenance_reminder ()
 
 check_proc ()
 {
-	echo -n "Checking Java process ... "
+	echo -n "Checking Process (${CONTAINER_TYPE}) ... "
 
     CHECK_PROC_RESTART="true"
 
@@ -205,15 +272,31 @@ check_proc ()
 
 		log "WARNING" "Check process functionality is not enabled. Please set PROCESS_CHECK=yes in xinit.cfg file to enable it. Bye Bye!"
 		exit 1
+	fi
+
+    # Modern systemd check
+    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
+        if systemctl is-active --quiet xwiki.service; then
+             echo "OK"
+        else
+             echo "FAILED"
+             log "CRITICAL" "Service xwiki.service is not active!"
+             if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
+			    send_Notification "Service xwiki.service is not active!"
+			    restart_container
+		     fi
+        fi
+        return
+    fi
 	
-	# If pid file doesn't exists...
-	elif [[ ! -e ${CATALINA_PID} ]]; then
+	# Fallback to PID file check for non-systemd or legacy
+	if [[ ! -e ${CATALINA_PID} ]]; then
 
 		echo "FAILED"
 		log "CRITICAL" "Catalina pid file not found!"
 		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
 			send_Notification "Catalina pid file not found!"
-			restart_tomcat
+			restart_container
 		fi
 		
 	# If pid file exists but is empty
@@ -223,7 +306,7 @@ check_proc ()
 		log "CRITICAL" "Void pid!"
 		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
 			send_Notification "Void pid!"
-			restart_tomcat
+			restart_container
 		fi
 
 	# If pid file exists but the pid listed in this file doesn't exists
@@ -233,10 +316,10 @@ check_proc ()
 		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
 			
 			echo "FAILED"
-			log "CRITICAL" "Java process died"
+			log "CRITICAL" "Process died"
 			if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-				send_Notification "Java process died"
-				restart_tomcat
+				send_Notification "Process died"
+				restart_container
 			fi
 		else
 			echo "OK"
@@ -299,12 +382,12 @@ check_http ()
 	done
 	if [[ ${RESPONSE_CODE_MATCH} -ne 1 ]]; then
 		
+        log "CRITICAL" "wiki is NOT responding! Response code: ${RESPONSE_CODE} Expect Code: ${EXPECT_HTTP_RESPONSE_CODE} Exit Code: ${EXIT_CODE} URL: ${CHECK_HTTP_URL}"
+
 		# If test-http
 		if [[ $1 -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
 			send_Notification "wiki is NOT responding! Response code: ${RESPONSE_CODE} Expect Code: ${EXPECT_HTTP_RESPONSE_CODE} Exit Code: ${EXIT_CODE} URL: ${CHECK_HTTP_URL}"
-			restart_tomcat
-		else
-			log "CRITICAL" "wiki is NOT responding! Response code: ${RESPONSE_CODE} Expect Code: ${EXPECT_HTTP_RESPONSE_CODE} Exit Code: ${EXIT_CODE} URL: ${CHECK_HTTP_URL}"
+			restart_container
 		fi
 	else
 			log "INFO" "wiki is available! Response code: ${RESPONSE_CODE} Expect Code: ${EXPECT_HTTP_RESPONSE_CODE} Exit Code: ${EXIT_CODE}"
@@ -379,8 +462,8 @@ show_help ()
 	echo "		test-proc		Just test if check-proc works. No notifications or restart will be performed."
 	echo "		test-openoffice		Just test if OpenOffice Daemon is running or not. No actions are taken."	
 	echo "		maintenance [on|off|check]	Enable/disable Maintenance mode. In this mode, check_proc or http won't restart the wiki until disabled."	
-	echo "		sanitycheck-mysql	Run a sanity check upon mysql database configured in xinit.cfg file."	
-	echo "		spamdetection-mysql	Run a spam check to detect pages with huge number of comments."	
+	echo "		sanitycheck-db		Run a sanity check upon database configured in xinit.cfg file."	
+	echo "		spamdetection-db	Run a spam check to detect pages with huge number of comments."	
 	echo "		check-install		Check XWiki installation (based on standard installation)."
 	echo "		check-dep		Check all the dependencies commands Xinit needs to run."
 	echo "		nagios-info		Informations needed for Nagios to check XWiki availability will be printed."
@@ -503,7 +586,7 @@ get_info ()
 	df -h >> "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
 
-    if which mysql ; then
+	if [[ "${DB_TYPE}" == "mysql" ]] && which mysql >/dev/null ; then
         echo "#####SECTION DATABASES_DISK_USAGE#####" >> "${ATTACHE_FILE}"
         echo "" >> "${ATTACHE_FILE}"
 
@@ -517,6 +600,13 @@ get_info ()
                 echo "" >> "${ATTACHE_FILE}"
             fi
         fi
+    elif [[ "${DB_TYPE}" == "pgsql" ]] && which psql >/dev/null ; then
+         echo "#####SECTION DATABASES_DISK_USAGE#####" >> "${ATTACHE_FILE}"
+         echo "" >> "${ATTACHE_FILE}"
+         # Postgres disk usage is harder to get file-wise without being root on the data dir.
+         # We can query it via SQL.
+         psql -U "${MYSQL_USER}" -h "${MYSQL_HOST}" -c "SELECT pg_database.datname, pg_size_pretty(pg_database_size(pg_database.datname)) AS size FROM pg_database;" >> "${ATTACHE_FILE}"
+         echo "" >> "${ATTACHE_FILE}"
     fi
 
 	echo "#####SECTION JAVA_THREADS_NUMBER#####" >> "${ATTACHE_FILE}"
@@ -543,17 +633,18 @@ get_info ()
 	top -b -n 3 -d 0.5 -p"${pids_top_format}" >> "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
 
-	echo "#####SECTION MYSQL_FULL_PROCESS_LIST#####" >> "${ATTACHE_FILE}"
+	echo "#####SECTION DB_FULL_PROCESS_LIST#####" >> "${ATTACHE_FILE}"
     echo "" >> "${ATTACHE_FILE}"
 
-	if [[ $(which mysql) ]]; then
+	if [[ "${DB_TYPE}" == "mysql" ]] && [[ $(which mysql) ]]; then
 
 		mysql --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --host="${MYSQL_HOST}" -e "show full processlist;" >> "${ATTACHE_FILE}"
-
+    elif [[ "${DB_TYPE}" == "pgsql" ]] && [[ $(which psql) ]]; then
+        psql -U "${MYSQL_USER}" -h "${MYSQL_HOST}" -c "SELECT * FROM pg_stat_activity;" >> "${ATTACHE_FILE}"
 	else
 
-		log "WARNING" "Couldn't find mysql binary file."
-		echo "Couldn't find mysql binary" >> "${ATTACHE_FILE}"
+		log "WARNING" "Couldn't find db client binary file."
+		echo "Couldn't find db client binary" >> "${ATTACHE_FILE}"
 	fi
 	echo "" >> "${ATTACHE_FILE}"
 
@@ -578,13 +669,20 @@ get_info ()
 		fi
 	fi
 
-	echo "#####SECTION TOMCAT_LOGS#####" >> "${ATTACHE_FILE}"
+	echo "#####SECTION CONTAINER_LOGS#####" >> "${ATTACHE_FILE}"
     echo "" >> "${ATTACHE_FILE}"
 
     HeapSpaceFound=0
     PermgenSpaceFound=0
 
-    LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${TOMCAT_HOME}"/logs/catalina.out | tee -a "${ATTACHE_FILE}")"
+    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
+        # Try to use journalctl
+        LAST_LOG_LINES="$(journalctl -u xwiki.service -n "${LOG_LINE_NUMBER}" --no-pager | tee -a "${ATTACHE_FILE}")"
+    else
+        # Legacy file tailing
+        LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${TOMCAT_HOME}"/logs/catalina.out | tee -a "${ATTACHE_FILE}")"
+    fi
+
         if [[ $? == 0 ]] ; then
                 if grep -q -F "java.lang.OutOfMemoryError: Java heap space" <<< "${LAST_LOG_LINES}" ; then
                         HeapSpaceFound=1
@@ -901,8 +999,12 @@ check_dependencies ()
 	done
 }
 
-run_sanitycheck_mysql ()
+run_sanitycheck_db ()
 {
+    if [[ "${DB_TYPE}" != "mysql" ]]; then
+        echo "Sanity check currently only supports MySQL."
+        return
+    fi
 	echo "On what database do you want to perform the Sanity Check? [default:xwiki]"
 	read -r sanitycheck_db
 	if [[ ${sanitycheck_db} == "" ]] ; then
@@ -916,12 +1018,17 @@ run_sanitycheck_mysql ()
 	fi
 }
 
-run_spamdetection_mysql ()
+run_spamdetection_db ()
 {
         RED=$(tput setaf 1) # Red
         GREEN=$(tput setaf 2) # Green
         RST=$(tput sgr0) # Reset
         BOLD=$(tput bold)
+        
+        if [[ "${DB_TYPE}" != "mysql" ]]; then
+             echo "Spam detection currently only supports MySQL."
+             return
+        fi
 
         SPAM_DATABASES=$(mysql -u"${MYSQL_USER}" --password="${MYSQL_PASSWORD}" -h"${MYSQL_HOST}" -N -s -r -e 'show databases'|grep -v ^information_schema$|grep -v ^mysql$)
         for spam_db in ${SPAM_DATABASES} ; do
