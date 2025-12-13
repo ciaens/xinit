@@ -1,323 +1,105 @@
-#! /usr/bin/env bash
+#!/usr/bin/env bash
 
+set -e
 
-#################################
-#                               #
-#	xinit install script        #
-#                               #
-#################################
-
-# load the function file
-if [[ ! -e var/lib/xinit/functions ]]; then
-
-echo "Error: I can't find var/lib/xinit/functions file."
-exit 12
-
+if [[ ${EUID} -ne 0 ]]; then
+    echo "This script must be run as root"
+    exit 1
 fi
 
-if [[ ! -e var/lib/xinit/vars ]]; then
+echo "Xinit 2.0.0 Installation"
+echo "========================"
+echo ""
 
-echo "Error: I can't find var/lib/xinit/vars file."
-exit 15
-
-fi
-
-. var/lib/xinit/functions
-. var/lib/xinit/vars
-
-xinit_update ()
-{
-
-	if [[ -e /var/lib/xinit/vars ]]; then
-
-		installed_xinit_version="$(grep VERSION /var/lib/xinit/vars | cut -d = -f 2)"
-		current_xinit_version="$(grep VERSION var/lib/xinit/vars | cut -d = -f 2)"
-
-		if [[ ${installed_xinit_version} != "${current_xinit_version}" ]]; then
-
-			xinit_install
-
-		else
-
-			echo
-			echo " Xinit is up to date. Xinit version: ${installed_xinit_version}"
-			echo
-			exit 0
-		fi
-
-	else
-
-		echo
-		echo " Xinit is not installed or the installation is corrupted!"
-		echo
-		exit 4
-
-	fi
-
-}
-
-xinit_install ()
-{
-
-# check dependencies
-check_dependencies;
-
-# Ensure VAR_DIR exists and is owned by TOMCAT_USER
-if [[ -n "${VAR_DIR}" ]]; then
-    if [[ ! -d "${VAR_DIR}" ]]; then
-        echo "Creating ${VAR_DIR}..."
-        mkdir -p "${VAR_DIR}"
+if [[ -f /var/lib/xinit/vars ]]; then
+    source /var/lib/xinit/vars
+    echo "Detected existing xinit installation (version ${VERSION})"
+    echo ""
+    read -p "Upgrade to 2.0.0? [Y/n] " -r
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        exit 0
     fi
-    if [[ ${UID} -eq 0 ]]; then
-        chown -R "${TOMCAT_USER}:${TOMCAT_USER}" "${VAR_DIR}"
+    echo ""
+
+    if [[ -f /etc/xinit/xinit.cfg ]]; then
+        cp -p /etc/xinit/xinit.cfg /etc/xinit/xinit.cfg.backup.$(date +%Y%m%d-%H%M%S)
+        echo "Backed up configuration to /etc/xinit/xinit.cfg.backup.*"
     fi
 fi
 
-# Cleanup temp files that might be owned by root from previous runs
-if [[ -f "/var/tmp/xinit_http_output" ]]; then
-    rm -f "/var/tmp/xinit_http_output"
-fi
-if [[ -f "/var/tmp/attache_xwiki_file_notification" ]]; then
-    rm -f "/var/tmp/attache_xwiki_file_notification"
-fi
+echo "Installing xinit files..."
 
-if [[ ! -e var/lib/xinit/vars ]]; then
+install -m 755 bin/xinit /usr/local/bin/xinit
+install -m 755 bin/xinit-manager /usr/local/bin/xinit-manager
+echo "  Installed executables to /usr/local/bin/"
 
-	echo
-	echo " Couldn't find vars file! Please go into xinit folder and run install.sh!"
-	echo
-	exit 1
+mkdir -p /var/lib/xinit
+cp -r var/lib/xinit/* /var/lib/xinit/
+chmod 755 /var/lib/xinit/functions
+chmod 755 /var/lib/xinit/check-xwiki-install
+echo "  Installed libraries to /var/lib/xinit/"
 
+install -m 755 etc/init.d/xwiki.sh /etc/init.d/xwiki.sh
+echo "  Installed init.d script to /etc/init.d/xwiki.sh"
+
+mkdir -p /etc/xinit
+if [[ ! -f /etc/xinit/xinit.cfg ]]; then
+    cp etc/xinit/xinit.cfg /etc/xinit/xinit.cfg
+    echo "  Installed default configuration to /etc/xinit/xinit.cfg"
 else
-
-	. var/lib/xinit/vars
-
+    echo "  Kept existing configuration at /etc/xinit/xinit.cfg"
 fi
 
-if [[ -d ${LIB_DIR} ]]; then
-
-	echo "Lib dir (${LIB_DIR}) already exists. Installing the last one ..."
-	rm -rf "${LIB_DIR}"
-	cp -r var/lib/xinit "${LIB_DIR}"
-    if [[ "${ROOT_INSTALL}" == "false" ]] ; then
-        chown -R "${TOMCAT_USER}:${TOMCAT_USER}" "${LIB_DIR}"
-    fi
-
-
-else
-
-
-
-	echo "Installing lib dir ${LIB_DIR}..."
-
-	cp -r var/lib/xinit "${LIB_DIR}"
-
-    if [[ "${ROOT_INSTALL}" == "true" ]] || [[ "${ROOT_INSTALL}" == "false" ]] ; then
-
-        # Always chown to TOMCAT_USER, whether root install or not (if we have permissions)
-
-        # If ROOT_INSTALL is false, we might not have permission to chown if we are not root, 
-
-        # but the script assumes we are running as the correct user or have capabilities.
-
-        # Actually, standard behavior: if root, chown to service user. If not root, presumably we ARE the service user (or 'install' fails/warns).
-
-        
-
-        if [[ ${UID} -eq 0 ]]; then
-
-             chown -R "${TOMCAT_USER}:${TOMCAT_USER}" "${LIB_DIR}"
-
-        fi
-
-    fi
-
-	
-
-fi
-
-
-
-
-
-if [[ -e /etc/init.d/xwiki.sh ]]; then
-
-
-
-    echo "xwiki.sh script already exists! Installing a new one ..."
-
-    rm -f /etc/init.d/xwiki.sh
-
-    cp etc/init.d/xwiki.sh /etc/init.d/xwiki.sh
-
-    chmod a+x /etc/init.d/xwiki.sh
-
-    if [[ ${UID} -eq 0 ]]; then
-
-        chown "${TOMCAT_USER}:${TOMCAT_USER}" /etc/init.d/xwiki.sh
-
-    fi
-
-	
-
-else
-
-
-
-    echo "Installing xwiki.sh script ..."
-
-    cp etc/init.d/xwiki.sh /etc/init.d/xwiki.sh
-
-    chmod a+x /etc/init.d/xwiki.sh
-
-    if [[ ${UID} -eq 0 ]]; then
-
-        chown "${TOMCAT_USER}:${TOMCAT_USER}" /etc/init.d/xwiki.sh
-
-    fi
-
-fi
-
-if [[ -n ${USE_SYSTEMD} ]] ; then
-
-    INSTALL_SERVICE=true
-    if [[ -e /lib/systemd/system/xwiki.service || -e /usr/lib/systemd/system/xwiki.service ]]; then
-        echo "A system xwiki.service was found. Skipping installation of xinit-wrapped xwiki.service to avoid conflicts."
-        echo "If you want to use xinit as the service manager, please backup the existing service and remove it, then run install again."
-        INSTALL_SERVICE=false
-    fi
-
-    if [[ "${INSTALL_SERVICE}" == "true" ]]; then
-        if [[ -e /etc/systemd/system/xwiki.service ]]; then
-
-            echo "xwiki.service already exists! Installing a new one ..."
-            rm -f /etc/systemd/system/xwiki.service
-            cp etc/systemd/xwiki.service /etc/systemd/system/xwiki.service
-            if [[ "${ROOT_INSTALL}" == "false" ]] ; then
-                sed -i "s/XWIKI_USER/${TOMCAT_USER}/" /etc/systemd/system/xwiki.service
-                sed -i "s/XWIKI_GROUP/${TOMCAT_USER}/" /etc/systemd/system/xwiki.service
-            else
-                sed -i '/User\|Group/d' /etc/systemd/system/xwiki.service
-            fi
-            systemctl daemon-reload
-            systemctl enable xwiki.service
-
-        else
-
-            echo "Installing xwiki.service ..."
-            cp etc/systemd/xwiki.service /etc/systemd/system/xwiki.service
-            if [[ "${ROOT_INSTALL}" == "false" ]] ; then
-                sed -i "s/XWIKI_USER/${TOMCAT_USER}/" /etc/systemd/system/xwiki.service
-                sed -i "s/XWIKI_GROUP/${TOMCAT_USER}/" /etc/systemd/system/xwiki.service
-            else
-                sed -i '/User\|Group/d' /etc/systemd/system/xwiki.service
-            fi
-            systemctl daemon-reload
-            systemctl enable xwiki.service
-
-        fi
-    fi
-
-fi
-
-tomcat_service=$(ls /etc/systemd/system/multi-user.target.wants/tomcat*.service 2> /dev/null)
-if [[ -n ${tomcat_service} ]]  ; then
-   echo "Tomcat service found. Disabling it ..."
-   systemctl stop "${tomcat_service%%##*/}"
-   systemctl disable "${tomcat_service%%##*/}"
-fi
-
-if [[ ! -f ${LOG_FILE} ]] ; then
-    echo "Creating xinit log file"
-    touch "${LOG_FILE}"
-fi
-
-if [[ ${UID} -eq 0 ]]; then
-    chown "${TOMCAT_USER}:${TOMCAT_USER}" "${LOG_FILE}"
-fi
-
-if [[ "${INSTALL_CRONJOB}" == "true" ]] ; then
-cronjob=$(cat << EOF
-*/1 * * * * tomcat /etc/init.d/xwiki.sh check-proc > /dev/null 2> /dev/null
-*/5 * * * * tomcat /etc/init.d/xwiki.sh check-http > /dev/null 2> /dev/null
-EOF
-)
-    # We set cron only if xinit is installed by root
-    echo "Creating cronjob"
-    if [[ "${ROOT_INSTALL}" == "false" ]] ; then
-        echo "${cronjob}" | crontab -u "${TOMCAT_USER}" -
-    else
-        if [[ ! -d /etc/cron.d ]]; then
-            mkdir -p /etc/cron.d
-        fi
-        echo "${cronjob//tomcat/root}" > /etc/cron.d/xinit
-    fi
-
-fi
-
-if [[ ! -d ${CONF_DIR} ]]; then
-
-	echo "Installing xinit default configuration! Please edit /etc/xinit/xinit.cfg as you need!"
-	mkdir "${CONF_DIR}"
-	cp -f etc/xinit/xinit.cfg /etc/xinit/xinit.cfg
-    if [[ ${UID} -eq 0 ]]; then
-        chown -R "${TOMCAT_USER}:${TOMCAT_USER}" "${CONF_DIR}"
-    fi
-	echo "Installation Finished!"
-
-elif [[ -e "${CONF_DIR}/${XWIKI_CONF_FILE}" ]]; then
-
-	echo "A previous configuration of xinit already exists. I'll not touch it!"
-	echo "Installation Finished!"
-
-else
-
-	echo "Installing xinit default configuration! Please edit /etc/xinit/xinit.cfg as you need!"
-	cp -f etc/xinit/xinit.cfg /etc/xinit/xinit.cfg
-    if [[ ${UID} -eq 0 ]]; then
-        chown -R "${TOMCAT_USER}:${TOMCAT_USER}" "${CONF_DIR}"
-    fi
-    echo "Installation Finished!"
-
-fi
-}
-
-# Function used to migrate xinit conf (vers <= 0.0.17 ) to version >= 1.0
-migrate()
-{
-	OLD_CONFIGURATION_FILE='/etc/xinit/xinit.cfg';
-	NEW_CONFIGURATION_FILE='/etc/xinit/xinit.cfg.new'
-	DEFAULT_NEW_CONFIGURATION_FILE='var/lib/xinit/default.cfg';
-
-	if [[ ! -e $OLD_CONFIGURATION_FILE ]]; then
-
-		echo "Error: I was not able to find old conf file $OLD_CONFIGURATION_FILE"
-		exit 13
-	fi
-
-	if [[ ! -e $DEFAULT_NEW_CONFIGURATION_FILE ]]; then
-
-                echo "Error: I was not able to find the default new file $DEFAULT_NEW_CONFIGURATION_FILE"
-                exit 14
-        fi
-
-	./var/lib/xinit/migrate $OLD_CONFIGURATION_FILE $DEFAULT_NEW_CONFIGURATION_FILE $NEW_CONFIGURATION_FILE
-}
-
-case $1 in
-        --install)
-                        xinit_install
-                        ;;
-        --update)
-                        xinit_update
-                        ;;
-	--migrate)
-			migrate
-			;;
-        *)
-                echo ""
-                echo " usage: ./install.sh [ --install | --update | --migrate ]"
-                echo
-                exit 1
-
-esac
+mkdir -p /var/run/xinit
+mkdir -p /var/log
+touch /var/log/xinit.log
+
+echo ""
+echo "Detecting environment..."
+source /var/lib/xinit/vars
+source /var/lib/xinit/functions
+source /var/lib/xinit/default.cfg
+[[ -f /etc/xinit/xinit.cfg ]] && source /etc/xinit/xinit.cfg
+
+VERBOSE_DETECTION="true"
+detect_container_type
+resolve_container_paths
+detect_database_type
+
+echo "  Container: ${CONTAINER_TYPE} ${CONTAINER_VERSION}"
+echo "  Service: ${SERVICE_NAME}"
+echo "  Database: ${DB_TYPE}"
+echo "  User: ${CONTAINER_USER}"
+
+#if [[ -n "${CONTAINER_USER}" ]] && id "${CONTAINER_USER}" &>/dev/null; then
+#    chown -R "${CONTAINER_USER}:${CONTAINER_USER}" /var/run/xinit 2>/dev/null || true
+#    echo "  Set ownership on /var/run/xinit"
+#fi
+
+echo ""
+echo "Installation complete!"
+echo ""
+echo "Next steps:"
+echo "=========="
+echo ""
+echo "1. Verify detection:"
+echo "   xinit detect"
+echo ""
+echo "2. Configure memory/monitoring in /etc/xinit/xinit.cfg"
+echo "   Example for Jetty with Glowroot:"
+echo "     XWIKI_OPTS=\"-Xms2048m -Xmx4096m -javaagent:/opt/glowroot/glowroot.jar\""
+echo "     CHECK_HTTP=\"yes\""
+echo "     CHECK_HTTP_URL=\"http://localhost:8080/xwiki\""
+echo ""
+echo "3. Apply configuration to systemd:"
+echo "   xinit setup-systemd"
+echo "   systemctl daemon-reload"
+echo ""
+echo "4. Enable monitoring (choose one):"
+echo "   xinit timer on"
+echo "   xinit cronjob on"
+echo ""
+echo "5. Test:"
+echo "   xinit check-proc"
+echo "   xinit check-http"
+echo ""

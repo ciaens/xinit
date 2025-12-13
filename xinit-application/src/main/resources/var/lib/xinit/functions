@@ -1,242 +1,639 @@
 #!/usr/bin/env bash
 
+##############################################################################
+# XINIT 2.0 - Modern Container Detection and Management
+# Supports: Jetty and Tomcat (9/10) with systemd-first architecture
+##############################################################################
+
+require_systemd ()
+{
+    if ! command -v systemctl &>/dev/null; then
+        log "ERROR" "systemd is required for xinit 2.0 but was not found"
+        echo "Xinit 2.0 requires systemd to be available."
+        echo "Please ensure you are running on a systemd-based system (Debian 12/13, Ubuntu 20.04+, etc.)"
+        exit 1
+    fi
+}
+
+detect_container_type ()
+{
+    if [[ -n "${CONTAINER_TYPE}" ]] && [[ "${CONTAINER_TYPE}" != "auto" ]]; then
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Container type explicitly set to: ${CONTAINER_TYPE}"
+        return 0
+    fi
+
+    [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Auto-detecting container type..."
+
+    if command -v dpkg &>/dev/null; then
+        if dpkg -l 2>/dev/null | grep -q "^ii.*xwiki-jetty"; then
+            CONTAINER_TYPE="jetty"
+            CONTAINER_VERSION=$(dpkg -l 2>/dev/null | grep "^ii.*xwiki-jetty" | head -n1 | awk '{print $3}' | cut -d'-' -f1 | cut -d'+' -f1)
+            [[ -z "${CONTAINER_VERSION}" ]] && CONTAINER_VERSION="package"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Jetty via package (version: ${CONTAINER_VERSION})"
+            return 0
+        elif dpkg -l 2>/dev/null | grep -q "^ii.*tomcat10"; then
+            CONTAINER_TYPE="tomcat"
+            CONTAINER_VERSION="10"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Tomcat 10 via package"
+            return 0
+        elif dpkg -l 2>/dev/null | grep -q "^ii.*tomcat9"; then
+            CONTAINER_TYPE="tomcat"
+            CONTAINER_VERSION="9"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Tomcat 9 via package"
+            return 0
+        fi
+    fi
+
+    if [[ -d "/usr/lib/xwiki-jetty" ]] && [[ -f "/usr/lib/xwiki-jetty/start_xwiki.sh" ]]; then
+        CONTAINER_TYPE="jetty"
+        CONTAINER_VERSION="filesystem"
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Jetty via filesystem"
+        return 0
+    elif [[ -d "/usr/share/tomcat10" ]]; then
+        CONTAINER_TYPE="tomcat"
+        CONTAINER_VERSION="10"
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Tomcat 10 via filesystem"
+        return 0
+    elif [[ -d "/usr/share/tomcat9" ]]; then
+        CONTAINER_TYPE="tomcat"
+        CONTAINER_VERSION="9"
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Tomcat 9 via filesystem"
+        return 0
+    elif [[ -n "${TOMCAT_HOME}" ]] && [[ -d "${TOMCAT_HOME}" ]]; then
+        CONTAINER_TYPE="tomcat"
+        CONTAINER_VERSION="unknown"
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Tomcat via TOMCAT_HOME"
+        return 0
+    fi
+
+    if pgrep -f "start_xwiki.sh" >/dev/null 2>&1; then
+        CONTAINER_TYPE="jetty"
+        CONTAINER_VERSION="unknown"
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Jetty via running process"
+        return 0
+    elif pgrep -f "catalina" >/dev/null 2>&1; then
+        CONTAINER_TYPE="tomcat"
+        CONTAINER_VERSION="unknown"
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected Tomcat via running process"
+        return 0
+    fi
+
+    [[ "${VERBOSE_DETECTION}" == "true" ]] && log "WARNING" "Unable to auto-detect container type, defaulting to tomcat"
+    CONTAINER_TYPE="tomcat"
+    CONTAINER_VERSION="unknown"
+}
+
+resolve_container_paths ()
+{
+    case "${CONTAINER_TYPE}" in
+        "jetty")
+            CONTAINER_HOME="${JETTY_HOME:-/usr/lib/xwiki-jetty}"
+            CONTAINER_BASE="${JETTY_BASE:-/usr/lib/xwiki-jetty}"
+            CONTAINER_USER="${JETTY_USER:-xwiki}"
+            CONTAINER_GROUP="${JETTY_USER:-xwiki}"
+            DATA_DIR="/var/lib/xwiki"
+            LOG_DIR="/var/log/xwiki"
+            SERVICE_NAME="xwiki.service"
+
+            LOCK_FILE="${CONTAINER_HOME}/tmp/xwiki-${JETTY_PORT:-8080}.lck"
+            START_SCRIPT="${CONTAINER_HOME}/start_xwiki.sh"
+            STOP_SCRIPT="${CONTAINER_HOME}/stop_xwiki.sh"
+
+            [[ -z "${XWIKI_INSTALL_DIR}" ]] && XWIKI_INSTALL_DIR="/var/lib/xwiki"
+            ;;
+
+        "tomcat")
+            if [[ "${CONTAINER_VERSION}" == "10" ]]; then
+                CONTAINER_HOME="${TOMCAT_HOME:-/usr/share/tomcat10}"
+                CONTAINER_BASE="${TOMCAT_BASE:-/var/lib/tomcat10}"
+                LOG_DIR="/var/log/tomcat10"
+                SERVICE_NAME="tomcat10.service"
+            elif [[ "${CONTAINER_VERSION}" == "9" ]]; then
+                CONTAINER_HOME="${TOMCAT_HOME:-/usr/share/tomcat9}"
+                CONTAINER_BASE="${TOMCAT_BASE:-/var/lib/tomcat9}"
+                LOG_DIR="/var/log/tomcat9"
+                SERVICE_NAME="tomcat9.service"
+            else
+                CONTAINER_HOME="${TOMCAT_HOME:-/usr/local/tomcat}"
+                CONTAINER_BASE="${TOMCAT_HOME:-/usr/local/tomcat}"
+                LOG_DIR="${CONTAINER_HOME}/logs"
+                SERVICE_NAME="xwiki.service"
+            fi
+
+            CONTAINER_USER="${TOMCAT_USER:-tomcat}"
+            CONTAINER_GROUP="${TOMCAT_USER:-tomcat}"
+            DATA_DIR="/var/lib/xwiki"
+            CATALINA_PID="${CATALINA_PID:-/var/tmp/catalina.pid}"
+            START_SCRIPT="${CONTAINER_HOME}/bin/catalina.sh start"
+            STOP_SCRIPT="${CONTAINER_HOME}/bin/catalina.sh stop"
+
+            [[ -z "${XWIKI_INSTALL_DIR}" ]] && XWIKI_INSTALL_DIR="${CONTAINER_BASE}/webapps/xwiki"
+            ;;
+    esac
+
+    if [[ -z "${JAVA_HOME}" ]] || [[ ! -d "${JAVA_HOME}" ]]; then
+        if [[ -L "/usr/lib/jvm/default-java" ]]; then
+            JAVA_HOME="/usr/lib/jvm/default-java"
+        elif [[ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]]; then
+            JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
+        elif [[ -d "/usr/lib/jvm/java-11-openjdk-amd64" ]]; then
+            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
+        fi
+    fi
+
+    export CONTAINER_TYPE CONTAINER_VERSION CONTAINER_HOME CONTAINER_BASE
+    export CONTAINER_USER CONTAINER_GROUP LOG_DIR DATA_DIR SERVICE_NAME
+    export XWIKI_INSTALL_DIR JAVA_HOME
+
+    if [[ "${VERBOSE_DETECTION}" == "true" ]]; then
+        log "INFO" "Container: ${CONTAINER_TYPE} ${CONTAINER_VERSION}"
+        log "INFO" "Home: ${CONTAINER_HOME}"
+        log "INFO" "User: ${CONTAINER_USER}"
+        log "INFO" "Service: ${SERVICE_NAME}"
+    fi
+}
+
+detect_database_type ()
+{
+    if [[ -n "${DB_TYPE}" ]] && [[ "${DB_TYPE}" != "auto" ]]; then
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Database type explicitly set to: ${DB_TYPE}"
+        extract_database_credentials
+        return 0
+    fi
+
+    [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Auto-detecting database type..."
+
+    if command -v dpkg &>/dev/null; then
+        if dpkg -l 2>/dev/null | grep -q "^ii.*xwiki-mariadb-common"; then
+            DB_TYPE="mysql"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected MariaDB via xwiki-mariadb-common package"
+            extract_database_credentials
+            return 0
+        elif dpkg -l 2>/dev/null | grep -q "^ii.*xwiki-mysql-common"; then
+            DB_TYPE="mysql"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected MySQL via xwiki-mysql-common package"
+            extract_database_credentials
+            return 0
+        elif dpkg -l 2>/dev/null | grep -q "^ii.*xwiki-postgresql-common"; then
+            DB_TYPE="pgsql"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected PostgreSQL via xwiki-postgresql-common package"
+            extract_database_credentials
+            return 0
+        elif dpkg -l 2>/dev/null | grep -q "^ii.*mariadb-server"; then
+            DB_TYPE="mysql"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected MariaDB via mariadb-server package"
+            extract_database_credentials
+            return 0
+        elif dpkg -l 2>/dev/null | grep -q "^ii.*mysql-server"; then
+            DB_TYPE="mysql"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected MySQL via mysql-server package"
+            extract_database_credentials
+            return 0
+        elif dpkg -l 2>/dev/null | grep -q "^ii.*postgresql"; then
+            DB_TYPE="pgsql"
+            [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected PostgreSQL via postgresql package"
+            extract_database_credentials
+            return 0
+        fi
+    fi
+
+    if command -v mysql &>/dev/null || command -v mariadb &>/dev/null; then
+        DB_TYPE="mysql"
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected MySQL/MariaDB client tools"
+        extract_database_credentials
+        return 0
+    elif command -v psql &>/dev/null; then
+        DB_TYPE="pgsql"
+        [[ "${VERBOSE_DETECTION}" == "true" ]] && log "INFO" "Detected PostgreSQL client tools"
+        extract_database_credentials
+        return 0
+    fi
+
+    [[ "${VERBOSE_DETECTION}" == "true" ]] && log "WARNING" "No database detected or configured"
+    DB_TYPE="none"
+}
+
+extract_database_credentials ()
+{
+    [[ -n "${DB_CREDENTIALS_EXTRACTED}" ]] && return 0
+
+    if [[ -f "${XWIKI_INSTALL_DIR}/WEB-INF/hibernate.cfg.xml" ]]; then
+        local hibernate_cfg="${XWIKI_INSTALL_DIR}/WEB-INF/hibernate.cfg.xml"
+
+        if [[ "${DB_TYPE}" == "mysql" ]]; then
+            if [[ -z "${MYSQL_USER}" ]] || [[ "${MYSQL_USER}" == "root" ]]; then
+                MYSQL_USER=$(grep -v '<!--' "${hibernate_cfg}" | grep 'hibernate.connection.username' | grep -oP '>\K[^<]+' | head -n1)
+                [[ -z "${MYSQL_USER}" ]] && MYSQL_USER="root"
+            fi
+            if [[ -z "${MYSQL_PASSWORD}" ]]; then
+                MYSQL_PASSWORD=$(grep -v '<!--' "${hibernate_cfg}" | grep 'hibernate.connection.password' | grep -oP '>\K[^<]+' | head -n1)
+            fi
+
+            local jdbc_url=$(grep -v '<!--' "${hibernate_cfg}" | grep 'hibernate.connection.url' | grep -oP '>\K[^<]+' | head -n1)
+            if [[ -n "${jdbc_url}" ]]; then
+                if [[ -z "${MYSQL_HOST}" ]] || [[ "${MYSQL_HOST}" == "localhost" ]]; then
+                    MYSQL_HOST=$(echo "${jdbc_url}" | sed -n 's|.*//\([^:/]*\).*|\1|p')
+                    [[ -z "${MYSQL_HOST}" ]] && MYSQL_HOST="localhost"
+                fi
+
+                local db_name=$(echo "${jdbc_url}" | sed -n 's|.*/\([^/?]*\).*|\1|p')
+                [[ -n "${db_name}" ]] && MYSQL_DATABASE="${db_name}"
+            fi
+
+        elif [[ "${DB_TYPE}" == "pgsql" ]]; then
+            if [[ -z "${PGSQL_USER}" ]] || [[ "${PGSQL_USER}" == "postgres" ]]; then
+                PGSQL_USER=$(grep -v '<!--' "${hibernate_cfg}" | grep 'hibernate.connection.username' | grep -oP '>\K[^<]+' | head -n1)
+                [[ -z "${PGSQL_USER}" ]] && PGSQL_USER="postgres"
+            fi
+            if [[ -z "${PGSQL_PASSWORD}" ]]; then
+                PGSQL_PASSWORD=$(grep -v '<!--' "${hibernate_cfg}" | grep 'hibernate.connection.password' | grep -oP '>\K[^<]+' | head -n1)
+            fi
+
+            local jdbc_url=$(grep -v '<!--' "${hibernate_cfg}" | grep 'hibernate.connection.url' | grep -oP '>\K[^<]+' | head -n1)
+            if [[ -n "${jdbc_url}" ]]; then
+                if [[ -z "${PGSQL_HOST}" ]] || [[ "${PGSQL_HOST}" == "localhost" ]]; then
+                    PGSQL_HOST=$(echo "${jdbc_url}" | sed -n 's|.*//\([^:/]*\).*|\1|p')
+                    [[ -z "${PGSQL_HOST}" ]] && PGSQL_HOST="localhost"
+                fi
+                if [[ -z "${PGSQL_DATABASE}" ]] || [[ "${PGSQL_DATABASE}" == "xwiki" ]]; then
+                    PGSQL_DATABASE=$(echo "${jdbc_url}" | sed -n 's|.*/\([^/?]*\).*|\1|p')
+                    [[ -z "${PGSQL_DATABASE}" ]] && PGSQL_DATABASE="xwiki"
+                fi
+            fi
+        fi
+    fi
+
+    DB_CREDENTIALS_EXTRACTED="true"
+    export MYSQL_USER MYSQL_PASSWORD MYSQL_HOST MYSQL_DATABASE
+    export PGSQL_USER PGSQL_PASSWORD PGSQL_HOST PGSQL_DATABASE
+}
+
+get_container_pid ()
+{
+    local pid=""
+
+    case "${CONTAINER_TYPE}" in
+        "jetty")
+            if [[ -f "${LOCK_FILE}" ]] && [[ -s "${LOCK_FILE}" ]]; then
+                pid=$(cat "${LOCK_FILE}" 2>/dev/null)
+                if [[ -n "${pid}" ]] && ! kill -0 "${pid}" 2>/dev/null; then
+                    pid=""
+                fi
+            fi
+
+            if [[ -z "${pid}" ]]; then
+                pid=$(pgrep -f "start_xwiki.sh" | head -n 1)
+            fi
+            ;;
+
+        "tomcat")
+            if [[ -f "${CATALINA_PID}" ]] && [[ -s "${CATALINA_PID}" ]]; then
+                pid=$(cat "${CATALINA_PID}" 2>/dev/null)
+                if [[ -n "${pid}" ]] && ! kill -0 "${pid}" 2>/dev/null; then
+                    pid=""
+                fi
+            fi
+
+            if [[ -z "${pid}" ]]; then
+                pid=$(pgrep -f "catalina" | head -n 1)
+            fi
+            ;;
+    esac
+
+    echo "${pid}"
+}
+
+is_container_running ()
+{
+    if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+        return 0
+    else
+        local pid=$(get_container_pid)
+        [[ -n "${pid}" ]] && return 0
+        return 1
+    fi
+}
+
+setup_systemd_override ()
+{
+    if [[ ! -d "/etc/systemd/system" ]]; then
+        log "ERROR" "systemd not available"
+        return 1
+    fi
+
+    local override_dir="/etc/systemd/system/${SERVICE_NAME}.d"
+    local override_file="${override_dir}/xinit.conf"
+
+    log "INFO" "Creating systemd override for ${SERVICE_NAME}..."
+    mkdir -p "${override_dir}"
+
+    case "${CONTAINER_TYPE}" in
+        "jetty")
+            cat > "${override_file}" <<EOF
+[Service]
+# Xinit managed environment configuration
+Environment="XWIKI_OPTS=${XWIKI_OPTS:--Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m}}"
+Environment="JETTY_PORT=${JETTY_PORT:-8080}"
+Environment="JETTY_STOP_PORT=${JETTY_STOP_PORT:-8079}"
+
+RestartSec=10s
+TimeoutStopSec=120s
+
+# Xinit runtime directory
+ReadWritePaths=/var/run/xinit
+EOF
+            ;;
+        "tomcat")
+            cat > "${override_file}" <<EOF
+[Service]
+# Xinit managed environment configuration
+Environment="JAVA_OPTS=${JAVA_OPTS}"
+Environment="CATALINA_OPTS=${CATALINA_OPTS:--server -Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m}}"
+Environment="CATALINA_PID=${CATALINA_PID}"
+
+# XWiki data directory access
+ReadWritePaths=/var/lib/xwiki/data
+
+RestartSec=10s
+
+# Xinit runtime directory
+ReadWritePaths=/var/run/xinit
+EOF
+            ;;
+    esac
+
+    chmod 644 "${override_file}"
+    systemctl daemon-reload
+
+    log "INFO" "Systemd override created at ${override_file}"
+    log "INFO" "Run 'systemctl daemon-reload' if you edit it manually"
+}
 
 start_container ()
 {
-    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
-        if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
-             if [[ ${UID} -eq "0" ]] ; then
-                systemctl start xwiki.service
-             else
-                sudo systemctl start xwiki.service
-             fi
-             exit 0
+    log "INFO" "Starting Container (${CONTAINER_TYPE} ${CONTAINER_VERSION})..."
+
+    local delegated_to_systemd=false
+
+    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]]; then
+        if systemctl list-unit-files | grep -q "^${SERVICE_NAME}"; then
+            if [[ ! -f "/etc/systemd/system/${SERVICE_NAME}.d/xinit.conf" ]] && [[ -n "${XWIKI_OPTS}" || -n "${MEM_START}" || -n "${MEM_MAX}" ]]; then
+                log "WARNING" "Memory/JVM settings configured but systemd override not created"
+                log "WARNING" "Run 'xinit setup-systemd' to apply your configuration"
+            fi
+            log "INFO" "Delegating to systemd: ${SERVICE_NAME}"
+            systemctl start "${SERVICE_NAME}"
+            delegated_to_systemd=true
         fi
-        # If launched by systemd, we proceed (but typically xinit is not the executable for systemd anymore).
-        # However, if xinit IS the ExecStart, we continue.
     fi
 
-    XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
-    if [[ ${UID} != "${XINIT_INSTALL_USER}" ]] ; then
-        echo "Please use the right user (${XINIT_INSTALL_USER}) to manage xwiki.service."
-        exit 1
-    fi
-
-	log "INFO" "Starting Container (${CONTAINER_TYPE}) ..."
-
-	if [[ -z "$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}')" ]]; then
-
-		if [[ "${CLEAN_TEMP_ON_STARTUP}" == "1" ]]; then
-			log "INFO" "Cleaning Tomcat's temp folder ... "
-			rm -rf "${TOMCAT_HOME}"/temp/*
-		fi
-
-        # Log Rotation (Legacy)
-        if [[ -f "${TOMCAT_HOME}/logs/catalina.out" ]]; then
-            LOG_SIZE=$(stat -c%s "${TOMCAT_HOME}/logs/catalina.out")
-            if [[ ${LOG_SIZE} -gt ${LOG_ROTATE_SIZE} ]]; then
-                log "INFO" "Rotating catalina.out (Size: ${LOG_SIZE})..."
-                mv "${TOMCAT_HOME}/logs/catalina.out" "${TOMCAT_HOME}/logs/catalina.out.$(date +%Y%m%d-%H%M%S)"
-            fi
+    if [[ "${delegated_to_systemd}" == "false" ]]; then
+        if is_container_running; then
+            log "WARNING" "Container already running"
+            return 0
         fi
 
-		if [[ -e "${CATALINA_PID}" ]]; then
+        if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then
+            stop_openoffice
+        fi
 
-			log "INFO" "Found catalina.pid file, removing it ... "
-			rm -f "${CATALINA_PID}"
-		fi
-		if [[ ${JVM_DEBUG} == yes ]]; then
+        if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 1 ]]; then
+            start_openoffice
+        fi
 
-			log "INFO" "Debug mode activated!"
-			CATALINA_OPTS="${CATALINA_OPTS} ${JVM_DEBUG_OPTS}"
-		fi
+        case "${CONTAINER_TYPE}" in
+            "jetty")
+                start_jetty
+                ;;
+            "tomcat")
+                start_tomcat
+                ;;
+        esac
+    fi
 
-		# Stop OO Server if it is running (OO_SERVER_TYPE=0)
-		if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then 
-                        stop_openoffice
-                fi
+    if [[ -n "${MAKE_FIRST_REQUEST}" ]] && [[ "${MAKE_FIRST_REQUEST}" != "no" ]]; then
+        log "INFO" "Waiting for container to be ready..."
+        sleep ${FIRST_REQUEST_SLEEP_TIME}
 
-		# Start OpenOffice Daemon if OO_SERVER_TYPE=1
-                if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 1 ]]; then
-                        start_openoffice
-                fi
+        log "INFO" "Making first request(s)..."
 
-		# Enable agent
-                if [[ -n "${JVM_AGENTPATH}" ]]; then
-			JAVA_OPTS="-agentpath:${JVM_AGENTPATH} ${JAVA_OPTS}"
-			export JAVA_OPTS
-		fi
-
-        if [[ "${CONTAINER_TYPE}" == "tomcat" ]]; then
-            if [[ "${ROOT_INSTALL}" != "false" ]]; then
-                su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh start
-            else
-                "${TOMCAT_HOME}"/bin/catalina.sh start
-            fi
+        if [[ "${MAKE_FIRST_REQUEST}" == "yes" ]]; then
+            check_http 1
         else
-            log "WARNING" "Manual start for container type ${CONTAINER_TYPE} is not fully implemented in legacy mode. Use systemd."
+            for url in $(echo "${MAKE_FIRST_REQUEST}" | tr ',' '\n'); do
+                log "INFO" "Requesting ${url}..."
+                OLD_URL="${CHECK_HTTP_URL}"
+                CHECK_HTTP_URL="${url}"
+                check_http 1
+                CHECK_HTTP_URL="${OLD_URL}"
+            done
         fi
-		
-		# If enabled, make first request
-		if [[ -n "${MAKE_FIRST_REQUEST}" && "${MAKE_FIRST_REQUEST}" != "no" ]]; then
+    fi
 
-			log "INFO" "Making first request(s) ... "
-			sleep 7
-
-            if [[ "${MAKE_FIRST_REQUEST}" == "yes" ]]; then
-			    check_http 1
-            else
-                for url in $(echo "${MAKE_FIRST_REQUEST}" | tr ',' '\n'); do
-                    log "INFO" "Requesting ${url} ..."
-                    # Temporarily override CHECK_HTTP_URL
-                    OLD_URL="${CHECK_HTTP_URL}"
-                    CHECK_HTTP_URL="${url}"
-                    check_http 1
-                    CHECK_HTTP_URL="${OLD_URL}"
-                done
-            fi
-	
-		fi
-
-	else
-
-		log "WARNING" "Java process found! Stop container first!"
-	fi
-
+    return 0
 }
-# Backward compatibility
-start_tomcat () { start_container; }
+
+start_jetty ()
+{
+    log "INFO" "Starting Jetty..."
+
+    export XWIKI_OPTS="${XWIKI_OPTS:--Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m}}"
+    export JETTY_PORT="${JETTY_PORT:-8080}"
+    export JETTY_STOP_PORT="${JETTY_STOP_PORT:-8079}"
+    export JAVA_HOME
+
+    if [[ "${JVM_DEBUG}" == "yes" ]]; then
+        export DEBUG=true
+        export JETTY_DEBUG_PORT="${JVM_DEBUG_PORT:-5005}"
+    fi
+
+    if [[ -n "${JVM_AGENTPATH}" ]]; then
+        XWIKI_OPTS="-agentpath:${JVM_AGENTPATH} ${XWIKI_OPTS}"
+    fi
+
+    if [[ ${UID} -eq 0 ]]; then
+        su "${CONTAINER_USER}" -c "bash ${START_SCRIPT} --noninteractive"
+    else
+        bash "${START_SCRIPT}" --noninteractive
+    fi
+}
+
+start_tomcat ()
+{
+    log "INFO" "Starting Tomcat..."
+
+    if [[ "${CLEAN_TEMP_ON_STARTUP}" == "1" ]]; then
+        log "INFO" "Cleaning temp folder..."
+        rm -rf "${CONTAINER_BASE}"/temp/* 2>/dev/null || true
+    fi
+
+    if [[ -f "${LOG_DIR}/catalina.out" ]]; then
+        LOG_SIZE=$(stat -c%s "${LOG_DIR}/catalina.out" 2>/dev/null || echo "0")
+        LOG_ROTATE_SIZE="${LOG_ROTATE_SIZE:-10485760}"
+        if [[ ${LOG_SIZE} -gt ${LOG_ROTATE_SIZE} ]]; then
+            log "INFO" "Rotating catalina.out (${LOG_SIZE} bytes)..."
+            mv "${LOG_DIR}/catalina.out" "${LOG_DIR}/catalina.out.$(date +%Y%m%d-%H%M%S)"
+            ls -t "${LOG_DIR}"/catalina.out.* 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
+        fi
+    fi
+
+    [[ -e "${CATALINA_PID}" ]] && rm -f "${CATALINA_PID}"
+
+    export CATALINA_HOME="${CONTAINER_HOME}"
+    export CATALINA_BASE="${CONTAINER_BASE}"
+    export CATALINA_PID
+    export JAVA_HOME
+    export CATALINA_OPTS="${CATALINA_OPTS:--server -Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m} -Dfile.encoding=utf-8 -Djava.awt.headless=true}"
+    export JAVA_OPTS="${JAVA_OPTS:-}"
+
+    if [[ "${JVM_DEBUG}" == "yes" ]]; then
+        CATALINA_OPTS="${CATALINA_OPTS} ${JVM_DEBUG_OPTS}"
+    fi
+
+    if [[ -n "${JVM_AGENTPATH}" ]]; then
+        JAVA_OPTS="-agentpath:${JVM_AGENTPATH} ${JAVA_OPTS}"
+    fi
+
+    if [[ ${UID} -eq 0 ]]; then
+        su "${CONTAINER_USER}" -c "${CONTAINER_HOME}/bin/catalina.sh start"
+    else
+        "${CONTAINER_HOME}/bin/catalina.sh" start
+    fi
+}
 
 stop_container ()
 {
-    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
-         if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] ; then
-             if [[ ${UID} -eq "0" ]] ; then
-                systemctl stop xwiki.service
-             else
-                sudo systemctl stop xwiki.service
-             fi
-             exit 0
-         fi
+    log "INFO" "Stopping Container (${CONTAINER_TYPE})..."
+
+    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]]; then
+        if systemctl list-unit-files | grep -q "^${SERVICE_NAME}"; then
+            log "INFO" "Delegating to systemd: ${SERVICE_NAME}"
+            systemctl stop "${SERVICE_NAME}"
+            return $?
+        fi
     fi
 
-    XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
-    if [[ ${UID} != "${XINIT_INSTALL_USER}" ]] ; then
-        echo "Please use the right user (${XINIT_INSTALL_USER}) to manage xwiki.service."
-        exit 1
+    case "${CONTAINER_TYPE}" in
+        "jetty")
+            stop_jetty
+            ;;
+        "tomcat")
+            stop_tomcat
+            ;;
+    esac
+
+    sleep 2
+
+    local pid=$(get_container_pid)
+    if [[ -n "${pid}" ]]; then
+        log "WARNING" "Process still running, killing forcefully..."
+        kill -9 "${pid}" 2>/dev/null
+        sleep 1
     fi
 
-        log "INFO" "Stopping Container ..."
+    if [[ "${CONTAINER_TYPE}" == "tomcat" ]] && [[ -e "${CATALINA_PID}" ]]; then
+        rm -f "${CATALINA_PID}"
+    fi
 
-        if [[ "${CONTAINER_TYPE}" == "tomcat" ]]; then
-            if [[ "${ROOT_INSTALL}" != "false" ]]; then
-                su "${TOMCAT_USER}" -- "${TOMCAT_HOME}"/bin/catalina.sh stop
-            else
-                "${TOMCAT_HOME}"/bin/catalina.sh stop
-            fi
-        fi
+    if [[ "${CONTAINER_TYPE}" == "jetty" ]] && [[ -f "${LOCK_FILE}" ]]; then
+        rm -f "${LOCK_FILE}"
+    fi
 
-        sleep 3
-
-        if [[ -s ${CATALINA_PID} ]]; then
-
-                TOMCAT_PID="$(cat "${CATALINA_PID}")"
-        else
-
-                TOMCAT_PID="$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}')"
-        fi
-
-        if [[ -n "${TOMCAT_PID}" ]]; then
-
-                log "WARNING" "Java process still running. Killing it ..."
-                for PID in ${TOMCAT_PID}
-                        do
-                        if [[ -n "$(ps -eo pid | grep "${PID}")" ]]; then
-
-                                kill -9 "${PID}"
-                                sleep 2
-                        fi
-                        done
-
-                if [[ -e ${CATALINA_PID} ]]; then
-
-                        log "WARNING" "Pid file exists. Removing it ..."
-                        rm -f "${CATALINA_PID}"
-                fi
-        fi
-
-	if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then
-
-		stop_openoffice
-	fi
-
+    if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then
+        stop_openoffice
+    fi
 }
-# Backward compatibility
-stop_tomcat () { stop_container; }
+
+stop_jetty ()
+{
+    log "INFO" "Stopping Jetty..."
+
+    if [[ ${UID} -eq 0 ]]; then
+        su "${CONTAINER_USER}" -c "bash ${STOP_SCRIPT}"
+    else
+        bash "${STOP_SCRIPT}"
+    fi
+}
+
+stop_tomcat ()
+{
+    log "INFO" "Stopping Tomcat..."
+
+    if [[ ${UID} -eq 0 ]]; then
+        su "${CONTAINER_USER}" -c "${CONTAINER_HOME}/bin/catalina.sh stop"
+    else
+        "${CONTAINER_HOME}/bin/catalina.sh" stop
+    fi
+}
 
 restart_container ()
 {
+    local manual_restart=false
 
-    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] && [[ ${CHECK_PROC_RESTART} != "true" ]] && [[ ${CHECK_HTTP_RESTART} != "true" ]] ; then
-        echo "Please use systemctl restart xwiki.service instead."
-        exit 1
+    if [[ -z "${LAUNCHED_BY_SYSTEMD}" ]] && [[ ${CHECK_PROC_RESTART} != "true" ]] && [[ ${CHECK_HTTP_RESTART} != "true" ]]; then
+        manual_restart=true
     fi
 
-        log "INFO" "Restarting Container (${CONTAINER_TYPE}) ..."
-	KEEP_MAINTENANCE=0
-	if [[ -f ${VAR_DIR}/maintenance ]] ; then
-	  log "WARNING" "Maintenance mode is already enabled. You will need to delete ${VAR_DIR}/maintenance file by hand or disable maintenance mode."
-	  KEEP_MAINTENANCE=1
-	elif [[ ${MAINTENANCE_ON_RESTARTS} == 1 ]] ; then
-	  log "INFO" "Enabling maintenance mode for ${MAINTENANCE_TIME} seconds."
-	  echo>"${VAR_DIR}/maintenance"
-	fi
+    log "INFO" "Restarting Container (${CONTAINER_TYPE} ${CONTAINER_VERSION})..."
 
-    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
-        if [[ ${UID} -eq "0" ]] ; then
-             systemctl restart xwiki.service
+    KEEP_MAINTENANCE=0
+    if [[ -f ${VAR_DIR}/maintenance ]]; then
+        log "WARNING" "Maintenance mode already enabled. Delete ${VAR_DIR}/maintenance manually to disable."
+        KEEP_MAINTENANCE=1
+    elif [[ ${MAINTENANCE_ON_RESTARTS} == 1 ]]; then
+        log "INFO" "Enabling maintenance mode for ${MAINTENANCE_TIME} seconds"
+        mkdir -p "${VAR_DIR}"
+        echo > "${VAR_DIR}/maintenance"
+    fi
+
+    if systemctl list-unit-files | grep -q "^${SERVICE_NAME}"; then
+        if [[ ${UID} -eq 0 ]]; then
+            systemctl restart "${SERVICE_NAME}"
         else
-             # Non-root strategy: Kill the process and let Systemd restart it (Restart=on-failure/always)
-             # We assume we have permissions to signal the process (running as same user)
-             
-             # Try getting PID from file first
-             local pid=""
-             if [[ -s "${CATALINA_PID}" ]]; then
-                pid="$(cat "${CATALINA_PID}")"
-             fi
-             
-             # Fallback to pgrep
-             if [[ -z "${pid}" ]]; then
-                pid="$(pgrep "${TOMCAT_PROCESS_NAME}" | grep "${TOMCAT_HOME}" | awk '{print $2}' | head -n 1)"
-             fi
-             
-             if [[ -n "${pid}" ]]; then
-                 log "INFO" "Non-root user: Killing process ${pid} to trigger Systemd restart..."
-                 kill -9 "${pid}"
-             else
-                 log "WARNING" "Process not found. Attempting 'systemctl start' (may require privileges)..."
-                 systemctl start xwiki.service || log "ERROR" "Failed to start service. Privileges might be required."
-             fi
+            local pid=$(get_container_pid)
+            if [[ -n "${pid}" ]]; then
+                log "INFO" "Non-root: Killing process ${pid} to trigger systemd restart..."
+                kill -9 "${pid}"
+            else
+                log "WARNING" "Process not found, attempting systemctl start..."
+                systemctl start "${SERVICE_NAME}" || log "ERROR" "Failed to start service"
+            fi
         fi
     else
-        # Legacy manual restart
         stop_container
+        sleep 2
         start_container
+        return $?
     fi
-   
-	if [[ ${MAINTENANCE_ON_RESTARTS} == 1 ]] && [[ ${KEEP_MAINTENANCE} != 1 ]]; then
-	  ## We'll sleep some time in a subshell and remove maintenance file not matter what eventually (even if something kills the process)
-          trap 'rm -f "${VAR_DIR}/maintenance" 2>/dev/null' SIGINT SIGQUIT SIGTERM TERM
-          (   
-            sleep "${MAINTENANCE_TIME}"
-            rm -f "${VAR_DIR}/maintenance" 
-          ) &>/dev/null &
-          trap SIGINT SIGQUIT SIGTERM TERM
-	fi
- 
+
+    if [[ ${MAINTENANCE_ON_RESTARTS} == 1 ]] && [[ ${KEEP_MAINTENANCE} != 1 ]]; then
+        trap 'rm -f "${VAR_DIR}/maintenance" 2>/dev/null' SIGINT SIGQUIT SIGTERM TERM
+        (
+            sleep "${MAINTENANCE_TIME:-600}"
+            rm -f "${VAR_DIR}/maintenance"
+        ) &>/dev/null &
+        trap - SIGINT SIGQUIT SIGTERM TERM
+    fi
+
+    if [[ -n "${MAKE_FIRST_REQUEST}" ]] && [[ "${MAKE_FIRST_REQUEST}" != "no" ]]; then
+        log "INFO" "Waiting for container to be ready..."
+        sleep 30
+
+        log "INFO" "Making first request(s) after restart..."
+
+        if [[ "${MAKE_FIRST_REQUEST}" == "yes" ]]; then
+            check_http 1
+        else
+            for url in $(echo "${MAKE_FIRST_REQUEST}" | tr ',' '\n'); do
+                log "INFO" "Requesting ${url}..."
+                OLD_URL="${CHECK_HTTP_URL}"
+                CHECK_HTTP_URL="${url}"
+                check_http 1
+                CHECK_HTTP_URL="${OLD_URL}"
+            done
+        fi
+    fi
 }
-# Backward compatibility
-restart_tomcat () { restart_container; }
 
 maintenance_reminder ()
 {
@@ -264,68 +661,27 @@ maintenance_reminder ()
 
 check_proc ()
 {
-	echo -n "Checking Process (${CONTAINER_TYPE}) ... "
+    echo -n "Checking Process (${CONTAINER_TYPE} ${CONTAINER_VERSION}) ... "
 
     CHECK_PROC_RESTART="true"
 
-	if [[ ${PROCESS_CHECK} != yes ]]; then
-
-		log "WARNING" "Check process functionality is not enabled. Please set PROCESS_CHECK=yes in xinit.cfg file to enable it. Bye Bye!"
-		exit 1
-	fi
-
-    # Modern systemd check
-    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
-        if systemctl is-active --quiet xwiki.service; then
-             echo "OK"
-        else
-             echo "FAILED"
-             log "CRITICAL" "Service xwiki.service is not active!"
-             if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-			    send_Notification "Service xwiki.service is not active!"
-			    restart_container
-		     fi
-        fi
-        return
+    if [[ ${PROCESS_CHECK} != yes ]]; then
+        log "WARNING" "Process check disabled. Set PROCESS_CHECK=yes to enable."
+        exit 1
     fi
-	
-	# Fallback to PID file check for non-systemd or legacy
-	if [[ ! -e ${CATALINA_PID} ]]; then
 
-		echo "FAILED"
-		log "CRITICAL" "Catalina pid file not found!"
-		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-			send_Notification "Catalina pid file not found!"
-			restart_container
-		fi
-		
-	# If pid file exists but is empty
-	elif [[ ! -s ${CATALINA_PID} ]]; then
-	
-		echo "FAILED"
-		log "CRITICAL" "Void pid!"
-		if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-			send_Notification "Void pid!"
-			restart_container
-		fi
-
-	# If pid file exists but the pid listed in this file doesn't exists
-	elif [[ -s ${CATALINA_PID} ]]; then
-
-		pid="$(cat "${CATALINA_PID}")"
-		if [[ -z "$(ps --pid="${pid}" -o comm=)" ]]; then
-			
-			echo "FAILED"
-			log "CRITICAL" "Process died"
-			if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
-				send_Notification "Process died"
-				restart_container
-			fi
-		else
-			echo "OK"
-		fi
-	fi
-
+    if is_container_running; then
+        echo "OK"
+        return 0
+    else
+        echo "FAILED"
+        log "CRITICAL" "Container not running! Service: ${SERVICE_NAME}"
+        if [[ "$1" -ne 1 ]] && [[ ! -f ${VAR_DIR}/maintenance ]]; then
+            send_Notification "Container ${CONTAINER_TYPE} (${SERVICE_NAME}) is not running!"
+            restart_container
+        fi
+        return 1
+    fi
 }
 
 check_http ()
@@ -348,7 +704,7 @@ check_http ()
 	fi
 
     CHECK_HTTP_RESTART="true"
-	
+
 	log "INFO" "URL: ${CHECK_HTTP_URL}"
 	cat /dev/null > "${REQUEST_ERROR_OUTPUT}"
 
@@ -371,7 +727,7 @@ check_http ()
 			exit 1
 		fi
 	fi
-	
+
 	# Check response code
 	RESPONSE_CODE_MATCH=0
 	for TEST_RESPONSE_CODE in $(echo "${EXPECT_HTTP_RESPONSE_CODE}" | tr ',' '\n')
@@ -381,7 +737,7 @@ check_http ()
 		fi
 	done
 	if [[ ${RESPONSE_CODE_MATCH} -ne 1 ]]; then
-		
+
         log "CRITICAL" "wiki is NOT responding! Response code: ${RESPONSE_CODE} Expect Code: ${EXPECT_HTTP_RESPONSE_CODE} Exit Code: ${EXIT_CODE} URL: ${CHECK_HTTP_URL}"
 
 		# If test-http
@@ -397,78 +753,198 @@ check_http ()
 
 cronjob ()
 {
+    local action="${1:-toggle}"
 
-cronjob=$(cat << EOF
-*/1 * * * * root /etc/init.d/xwiki.sh check-proc > /dev/null 2> /dev/null
-*/5 * * * * root /etc/init.d/xwiki.sh check-http > /dev/null 2> /dev/null
-EOF
-)
-
-    XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
-    if [[ ${UID} != "${XINIT_INSTALL_USER}" ]] ; then
-        echo "Please use the right user (${XINIT_INSTALL_USER}) to manage cronjobs."
+    if [[ ${UID} -ne 0 ]]; then
+        log "ERROR" "cronjob management requires root privileges"
         exit 1
     fi
 
-    if [[ $1 == 'on' ]]; then
-        if [[ "${ROOT_INSTALL}" == "false" ]] ; then
-            echo "${cronjob//root/}" | crontab -
-        else
-            echo "${cronjob}" > /etc/cron.d/xinit
-        fi
-	    log "INFO" "Enabling cronjobs..."
-    elif [[ $1 == 'off' ]]; then
-        if [[ "${ROOT_INSTALL}" == "false" ]] ; then
-            crontab -l | grep -F -v "${cronjob//root/}" | crontab -
-        else
+    local cronjob_content=$(cat << EOF
+*/1 * * * * root /usr/local/bin/xinit check-proc > /dev/null 2>&1
+*/5 * * * * root /usr/local/bin/xinit check-http > /dev/null 2>&1
+EOF
+)
+
+    case "${action}" in
+        'on')
+            echo "${cronjob_content}" > /etc/cron.d/xinit
+            chmod 644 /etc/cron.d/xinit
+            log "INFO" "Cronjobs enabled in /etc/cron.d/xinit"
+            ;;
+        'off')
             rm -f /etc/cron.d/xinit
-        fi
-	  log "INFO" "Disabling cronjobs..."
-	elif [[ $1 == 'check' ]]; then
-        if [[ "${ROOT_INSTALL}" == "false" ]] ; then
-            if ! crontab -l 2> /dev/null | grep -F -q "${cronjob//root/}"; then
-                echo "cronjobs are disabled."
+            log "INFO" "Cronjobs disabled (removed /etc/cron.d/xinit)"
+            ;;
+        'check')
+            if [[ -f /etc/cron.d/xinit ]]; then
+                echo "Cronjobs are enabled in /etc/cron.d/xinit"
             else
-               echo "cronjobs are enabled."
-	        fi
-        else
-            if grep -F -q "${cronjob}" /etc/cron.d/xinit 2> /dev/null ; then
-                echo "cronjobs are enabled."
-            else
-                echo "cronjobs are disabled."
+                echo "Cronjobs are disabled"
             fi
-        fi
+            ;;
+        '')
+            if [[ -f /etc/cron.d/xinit ]]; then
+                rm -f /etc/cron.d/xinit
+                log "INFO" "Toggled: cronjobs disabled"
+            else
+                echo "${cronjob_content}" > /etc/cron.d/xinit
+                chmod 644 /etc/cron.d/xinit
+                log "INFO" "Toggled: cronjobs enabled"
+            fi
+            ;;
+    esac
+}
+
+manage_timer ()
+{
+    local action="${1:-toggle}"
+
+    if [[ ${UID} -ne 0 ]]; then
+        log "ERROR" "Systemd timer management requires root privileges"
+        exit 1
     fi
 
+    if ! command -v systemctl &>/dev/null; then
+        log "ERROR" "systemd not available, use 'cronjob' instead"
+        exit 1
+    fi
+
+    case "${action}" in
+        'on')
+            if [[ ! -f /etc/systemd/system/xinit-monitor.service ]]; then
+                log "INFO" "Creating xinit-monitor systemd units..."
+                create_systemd_timer_units
+            fi
+            systemctl daemon-reload
+            systemctl enable xinit-monitor.timer
+            systemctl start xinit-monitor.timer
+            log "INFO" "Systemd timer enabled"
+            ;;
+        'off')
+            systemctl stop xinit-monitor.timer 2>/dev/null || true
+            systemctl disable xinit-monitor.timer 2>/dev/null || true
+            log "INFO" "Systemd timer disabled"
+            ;;
+        'check')
+            if systemctl is-active --quiet xinit-monitor.timer 2>/dev/null; then
+                echo "Systemd timer is enabled and active"
+                systemctl status xinit-monitor.timer --no-pager
+            elif systemctl is-enabled --quiet xinit-monitor.timer 2>/dev/null; then
+                echo "Systemd timer is enabled but not active"
+            else
+                echo "Systemd timer is disabled"
+            fi
+            ;;
+        '')
+            if systemctl is-active --quiet xinit-monitor.timer 2>/dev/null; then
+                systemctl stop xinit-monitor.timer
+                systemctl disable xinit-monitor.timer
+                log "INFO" "Toggled: timer disabled"
+            else
+                if [[ ! -f /etc/systemd/system/xinit-monitor.service ]]; then
+                    create_systemd_timer_units
+                fi
+                systemctl daemon-reload
+                systemctl enable xinit-monitor.timer
+                systemctl start xinit-monitor.timer
+                log "INFO" "Toggled: timer enabled"
+            fi
+            ;;
+    esac
+}
+
+create_systemd_timer_units ()
+{
+    log "INFO" "Creating systemd timer units..."
+
+    cat > /etc/systemd/system/xinit-monitor.service <<'EOF'
+[Unit]
+Description=XWiki Monitoring Service (xinit)
+After=xwiki.service tomcat10.service tomcat9.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/xinit check-proc
+ExecStart=/usr/local/bin/xinit check-http
+StandardOutput=journal
+StandardError=journal
+EOF
+
+    cat > /etc/systemd/system/xinit-monitor.timer <<'EOF'
+[Unit]
+Description=XWiki Monitoring Timer (xinit)
+Requires=xinit-monitor.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    chmod 644 /etc/systemd/system/xinit-monitor.service
+    chmod 644 /etc/systemd/system/xinit-monitor.timer
+
+    log "INFO" "Created systemd timer units"
 }
 
 show_help ()
 {
 	echo
-	echo " Usage: /etc/init.d/xwiki.sh [OPTIONS]"
+	echo " Xinit ${VERSION} - XWiki Management Tool"
+	echo " Usage: xinit [OPTIONS]"
 	echo
-	echo "	OPTIONS:"
+	echo " Container Management:"
+	echo "   start                    Start XWiki container (Jetty/Tomcat)"
+	echo "   stop                     Stop XWiki container"
+	echo "   restart                  Restart XWiki container"
 	echo
-	echo "		start			Start Tomcat server."
-	echo "		stop			Stop Tomcat server."
-	echo "		restart			Restart Tomcat server."
-	echo "		report			Send report by email. See MAIL parameter in xinit.cfg"
-	echo "		show-report		Print a short report about xwiki/machine status."
-	echo "		list-parameters		Print all available parameters and current configuration."
-	echo "		check-proc		Check Tomcat(java) process."
-	echo "		check-http [force]	Check if the wiki is responding or not. Use force to skip CHECK_HTTP=no"
-	echo "		check-openoffice	Check if OO Daemon is running and restart it if necessary. Only used for OO_SERVER_TYPE=1"
-	echo "		test-http [force]	Just test if check-http works. No notifications or restart will be performed. Use force to skip CHECK_HTTP=no"
-	echo "		test-proc		Just test if check-proc works. No notifications or restart will be performed."
-	echo "		test-openoffice		Just test if OpenOffice Daemon is running or not. No actions are taken."	
-	echo "		maintenance [on|off|check]	Enable/disable Maintenance mode. In this mode, check_proc or http won't restart the wiki until disabled."	
-	echo "		sanitycheck-db		Run a sanity check upon database configured in xinit.cfg file."	
-	echo "		spamdetection-db	Run a spam check to detect pages with huge number of comments."	
-	echo "		check-install		Check XWiki installation (based on standard installation)."
-	echo "		check-dep		Check all the dependencies commands Xinit needs to run."
-	echo "		nagios-info		Informations needed for Nagios to check XWiki availability will be printed."
-	echo "		cronjob [on|off|check]	Enable/disable cronjobs checks managing automatic restarts."	
-	echo "		version			Print Xinit and XWiki version."
+	echo " Monitoring (Core Features):"
+	echo "   check-proc               Check if container process is running"
+	echo "   check-http [force]       Check if wiki responds to HTTP requests"
+	echo "   test-proc                Test process check without restart/notifications"
+	echo "   test-http [force]        Test HTTP check without restart/notifications"
+	echo
+	echo " Configuration & Setup:"
+	echo "   detect                   Show detected container and database configuration"
+	echo "   setup-systemd            Create systemd override for memory/JVM settings"
+	echo "   check-install            Check XWiki installation validity"
+	echo "   check-dep                Check required command dependencies"
+	echo "   list-parameters          Show all configuration parameters"
+	echo
+	echo " Monitoring Automation:"
+	echo "   cronjob [on|off|check]   Enable/disable cronjob monitoring (legacy)"
+	echo "   timer [on|off|check]     Enable/disable systemd timer monitoring (modern)"
+	echo
+	echo " Maintenance:"
+	echo "   maintenance [on|off|check]  Enable/disable maintenance mode"
+	echo "                               (prevents auto-restart during maintenance)"
+	echo
+	echo " Database:"
+	echo "   sanitycheck-db           Run database sanity checks"
+	echo "   spamdetection-db         Scan for spam in wiki pages"
+	echo
+	echo " Reporting:"
+	echo "   report                   Generate and email full diagnostics report"
+	echo "   show-report              Display diagnostics report on screen"
+	echo "   nagios-info              Output Nagios monitoring parameters"
+	echo
+	echo " OpenOffice (Legacy):"
+	echo "   check-openoffice         Check OpenOffice daemon status"
+	echo "   test-openoffice          Test OpenOffice daemon without actions"
+	echo
+	echo " Info:"
+	echo "   version                  Show Xinit, XWiki, and container versions"
+	echo "   help                     Show this help message"
+	echo
+	echo " Examples:"
+	echo "   xinit detect             # Show detected configuration"
+	echo "   xinit setup-systemd      # Apply memory settings from xinit.cfg"
+	echo "   xinit timer on           # Enable automatic monitoring"
+	echo "   xinit maintenance on     # Prevent auto-restarts during maintenance"
 	echo
 
 }
@@ -489,16 +965,18 @@ log ()
 send_Notification ()
 {
 	local message="$1"
-	
+
 	get_info
 
         MemoryPrefix=''
-        if [[ ${HeapSpaceFound} != 0 ]] ; then
+        if [[ ${OOMKillerFound} != 0 ]]; then
+                MemoryPrefix="[OOM KILLER]"
+        elif [[ ${HeapSpaceFound} != 0 ]]; then
                 MemoryPrefix="[Low Heap - ${MEM_MAX}]"
-        elif [[ ${PermgenSpaceFound} != 0 ]] ; then
+        elif [[ ${PermgenSpaceFound} != 0 ]]; then
                 MemoryPrefix="[Low Permgen - ${MAX_PERM_SIZE}]"
         fi
-	
+
 	if [[ ${SEND_MAIL_NOTIFICATION} == yes ]]; then
 		if [[ -z ${MAIL} ]]; then
 			log "WARNING" "No email address was set. Please see MAIL parameter."
@@ -506,7 +984,7 @@ send_Notification ()
 			send_Mail "${message}"
 		fi
         fi
-        
+
         if [[ ${SEND_JABBER_MESSAGE} == yes ]]; then
 
         	send_Jabber_Message "${message}"
@@ -519,7 +997,7 @@ get_info ()
 {
 
 	log "INFO" "Getting infos to send notification!"
-	
+
 	echo "#####SECTION SERVER_NAME#####" > "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
 
@@ -528,7 +1006,7 @@ get_info ()
 		echo "${SERVER_NAME}" >> "${ATTACHE_FILE}"
 
 	else
-	
+
 		hostname | cut -d"." -f 1 >> "${ATTACHE_FILE}"
 
 	fi
@@ -542,7 +1020,7 @@ get_info ()
 	echo "#####SECTION XWIKI_VERSION#####" >> "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
 	if [[ -s ${XWIKI_INSTALL_DIR}/WEB-INF/version.properties ]]; then
-	
+
 		cut -d "=" -f 2 "${XWIKI_INSTALL_DIR}"/WEB-INF/version.properties  >> "${ATTACHE_FILE}"
 
 	else
@@ -554,7 +1032,7 @@ get_info ()
 
 	echo "#####SECTION XINIT_VERSION#####" >> "${ATTACHE_FILE}"
     echo "" >> "${ATTACHE_FILE}"
-	
+
 	grep "VERSION" /var/lib/xinit/vars | cut -d "=" -f2 >> "${ATTACHE_FILE}"
 
 	echo "" >> "${ATTACHE_FILE}"
@@ -569,7 +1047,7 @@ get_info ()
     echo "" >> "${ATTACHE_FILE}"
 
 	for port in ${CONNECTION_STATE_PORTS}; do
-		
+
 		echo "Port: ${port}" >> "${ATTACHE_FILE}"
 		netstat -tn | grep -E "^tcp.*:$port" | tr -s " " | cut -d " " -f6 | sort | uniq -c >> "${ATTACHE_FILE}"
 		echo "" >> "${ATTACHE_FILE}"
@@ -582,7 +1060,7 @@ get_info ()
 
 	echo "#####SECTION DISK_USAGE#####" >> "${ATTACHE_FILE}"
     echo "" >> "${ATTACHE_FILE}"
-	
+
 	df -h >> "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
 
@@ -603,15 +1081,13 @@ get_info ()
     elif [[ "${DB_TYPE}" == "pgsql" ]] && which psql >/dev/null ; then
          echo "#####SECTION DATABASES_DISK_USAGE#####" >> "${ATTACHE_FILE}"
          echo "" >> "${ATTACHE_FILE}"
-         # Postgres disk usage is harder to get file-wise without being root on the data dir.
-         # We can query it via SQL.
-         psql -U "${MYSQL_USER}" -h "${MYSQL_HOST}" -c "SELECT pg_database.datname, pg_size_pretty(pg_database_size(pg_database.datname)) AS size FROM pg_database;" >> "${ATTACHE_FILE}"
+         PGPASSWORD="${PGSQL_PASSWORD}" psql -U "${PGSQL_USER}" -h "${PGSQL_HOST}" -p "${PGSQL_PORT}" -c "SELECT pg_database.datname, pg_size_pretty(pg_database_size(pg_database.datname)) AS size FROM pg_database ORDER BY pg_database_size(pg_database.datname) DESC;" >> "${ATTACHE_FILE}"
          echo "" >> "${ATTACHE_FILE}"
     fi
 
 	echo "#####SECTION JAVA_THREADS_NUMBER#####" >> "${ATTACHE_FILE}"
     echo "" >> "${ATTACHE_FILE}"
-	
+
 	echo "Java Threads Number: $(ps -L -C java | wc -l)" >> "${ATTACHE_FILE}"
     echo "" >> "${ATTACHE_FILE}"
 
@@ -625,11 +1101,11 @@ get_info ()
 	        if [[ $(pidof "${daemon}") ]]; then
 	                PIDS="${PIDS} $(pidof "${daemon}")"
 	        fi
-	
+
 	done
-	
+
 	pids_top_format="$(echo "${PIDS}" | sed 's/ //1' | sed 's/ /,/g')"
-	
+
 	top -b -n 3 -d 0.5 -p"${pids_top_format}" >> "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
 
@@ -637,13 +1113,11 @@ get_info ()
     echo "" >> "${ATTACHE_FILE}"
 
 	if [[ "${DB_TYPE}" == "mysql" ]] && [[ $(which mysql) ]]; then
-
 		mysql --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --host="${MYSQL_HOST}" -e "show full processlist;" >> "${ATTACHE_FILE}"
     elif [[ "${DB_TYPE}" == "pgsql" ]] && [[ $(which psql) ]]; then
-        psql -U "${MYSQL_USER}" -h "${MYSQL_HOST}" -c "SELECT * FROM pg_stat_activity;" >> "${ATTACHE_FILE}"
+        PGPASSWORD="${PGSQL_PASSWORD}" psql -U "${PGSQL_USER}" -h "${PGSQL_HOST}" -p "${PGSQL_PORT}" -d "${PGSQL_DATABASE}" -c "SELECT pid, usename, datname, application_name, client_addr, state, query FROM pg_stat_activity WHERE datname = '${PGSQL_DATABASE}';" >> "${ATTACHE_FILE}"
 	else
-
-		log "WARNING" "Couldn't find db client binary file."
+		log "WARNING" "Database client not found or DB_TYPE=${DB_TYPE}"
 		echo "Couldn't find db client binary" >> "${ATTACHE_FILE}"
 	fi
 	echo "" >> "${ATTACHE_FILE}"
@@ -674,55 +1148,90 @@ get_info ()
 
     HeapSpaceFound=0
     PermgenSpaceFound=0
+    OOMKillerFound=0
 
-    if [[ -n "${USE_SYSTEMD}" && "${USE_SYSTEMD}" == "true" ]]; then
-        # Try to use journalctl
-        LAST_LOG_LINES="$(journalctl -u xwiki.service -n "${LOG_LINE_NUMBER}" --no-pager | tee -a "${ATTACHE_FILE}")"
+    if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+        LAST_LOG_LINES="$(journalctl -u "${SERVICE_NAME}" -n "${LOG_LINE_NUMBER}" --no-pager | tee -a "${ATTACHE_FILE}")"
     else
-        # Legacy file tailing
-        LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${TOMCAT_HOME}"/logs/catalina.out | tee -a "${ATTACHE_FILE}")"
+        if [[ "${CONTAINER_TYPE}" == "jetty" ]]; then
+            if [[ -f "${LOG_DIR}/xwiki.log" ]]; then
+                LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${LOG_DIR}"/xwiki.log | tee -a "${ATTACHE_FILE}")"
+            elif [[ -f "${CONTAINER_HOME}/logs/xwiki.log" ]]; then
+                LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${CONTAINER_HOME}"/logs/xwiki.log | tee -a "${ATTACHE_FILE}")"
+            fi
+        elif [[ "${CONTAINER_TYPE}" == "tomcat" ]]; then
+            if [[ -f "${LOG_DIR}/catalina.out" ]]; then
+                LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${LOG_DIR}"/catalina.out | tee -a "${ATTACHE_FILE}")"
+            fi
+        fi
     fi
 
-        if [[ $? == 0 ]] ; then
-                if grep -q -F "java.lang.OutOfMemoryError: Java heap space" <<< "${LAST_LOG_LINES}" ; then
-                        HeapSpaceFound=1
-                elif grep -q -F "java.lang.OutOfMemoryError: PermGen space" <<< "${LAST_LOG_LINES}" ; then
-                        PermgenSpaceFound=1
-                fi
+    if [[ $? == 0 ]]; then
+        if grep -q -F "java.lang.OutOfMemoryError: Java heap space" <<< "${LAST_LOG_LINES}"; then
+            HeapSpaceFound=1
+        elif grep -q -F "java.lang.OutOfMemoryError: PermGen space" <<< "${LAST_LOG_LINES}"; then
+            PermgenSpaceFound=1
         fi
+    fi
+
+    echo "" >> "${ATTACHE_FILE}"
+    echo "#####SECTION OOM_KILLER_CHECK#####" >> "${ATTACHE_FILE}"
+    echo "" >> "${ATTACHE_FILE}"
+
+    local oom_check_lines=""
+    if command -v journalctl &>/dev/null; then
+        oom_check_lines=$(journalctl -k -n 1000 --no-pager 2>/dev/null | grep -E "oom-kill|oom_reaper|Out of memory.*Kill process|Killed process.*java" || true)
+    fi
+
+    if [[ -z "${oom_check_lines}" ]] && [[ -r /var/log/kern.log ]]; then
+        oom_check_lines=$(tail -n 1000 /var/log/kern.log 2>/dev/null | grep -E "oom-kill|oom_reaper|Out of memory.*Kill process|Killed process.*java" || true)
+    fi
+
+    if [[ -z "${oom_check_lines}" ]] && command -v dmesg &>/dev/null; then
+        oom_check_lines=$(dmesg -T 2>/dev/null | tail -n 1000 | grep -E "oom-kill|oom_reaper|Out of memory.*Kill process|Killed process.*java" || true)
+    fi
+
+    if [[ -n "${oom_check_lines}" ]]; then
+        OOMKillerFound=1
+        echo "WARNING: OOM Killer activity detected!" >> "${ATTACHE_FILE}"
+        echo "" >> "${ATTACHE_FILE}"
+        echo "${oom_check_lines}" | tail -n 20 >> "${ATTACHE_FILE}"
+        echo "" >> "${ATTACHE_FILE}"
+        log "WARNING" "OOM Killer activity detected in system logs"
+    else
+        echo "No OOM Killer activity detected in recent system logs" >> "${ATTACHE_FILE}"
+        echo "" >> "${ATTACHE_FILE}"
+    fi
+
 	echo "" >> "${ATTACHE_FILE}"
 
 	echo "#####SECTION KILL_QUIT#####" >> "${ATTACHE_FILE}"
 
         echo "" >> "${ATTACHE_FILE}"
 
-        if [ -e "${TOMCAT_HOME}"/logs/catalina.out ]
-                then
-                PREKILL_LOG_NUMBER="$(wc -l "${TOMCAT_HOME}"/logs/catalina.out | awk '{print $1}')"
+        if [[ "${CONTAINER_TYPE}" == "tomcat" ]] && [[ -e "${LOG_DIR}/catalina.out" ]]; then
+            PREKILL_LOG_NUMBER="$(wc -l "${LOG_DIR}"/catalina.out | awk '{print $1}')"
 
-                # Execute kill -QUIT
-				local java_pid
-                java_pid="$(pidof "${TOMCAT_PROCESS_NAME}")"
+            local java_pid
+            java_pid=$(get_container_pid)
+            if [[ -n "${java_pid}" ]]; then
                 kill -3 "${java_pid}"
-                sleep "${KILL_QUIT_TIME_WAIT}"
+                sleep "${KILL_QUIT_TIME_WAIT:-4}"
 
-                POSTKILL_LOG_NUMBER="$(wc -l "${TOMCAT_HOME}"/logs/catalina.out | awk '{print $1}')"
-                # Calculating the thread dump size.
+                POSTKILL_LOG_NUMBER="$(wc -l "${LOG_DIR}"/catalina.out | awk '{print $1}')"
                 KILLQUIT_LOG_LINES="$((POSTKILL_LOG_NUMBER - PREKILL_LOG_NUMBER))"
 
-		                # Thread dump Analysis
-                if [ -n "${THREADDUMP_ANALYSIS}" ]
-                        then
-                        tail -n ${KILLQUIT_LOG_LINES} "${TOMCAT_HOME}"/logs/catalina.out > "${THREADDUMP_ANALYSIS_FILE}"
-                        echo "*** Thread Dump Analysis ***" >> "${ATTACHE_FILE}"
-                        eval "${THREADDUMP_ANALYSIS}" >> "${ATTACHE_FILE}"
-                        echo "" >> "${ATTACHE_FILE}"
+                if [[ -n "${THREADDUMP_ANALYSIS}" ]]; then
+                    tail -n ${KILLQUIT_LOG_LINES} "${LOG_DIR}"/catalina.out > "${THREADDUMP_ANALYSIS_FILE}"
+                    echo "*** Thread Dump Analysis ***" >> "${ATTACHE_FILE}"
+                    eval "${THREADDUMP_ANALYSIS}" >> "${ATTACHE_FILE}"
+                    echo "" >> "${ATTACHE_FILE}"
                 fi
 
-                # Output the Thread Dump result and print a sorted version of it right after (count every thread allocated to a specific page)
-                tail -n ${KILLQUIT_LOG_LINES} "${TOMCAT_HOME}"/logs/catalina.out | tee -a "${ATTACHE_FILE}" | grep \"http://| cut -d' ' -f1|uniq -c >> "${ATTACHE_FILE}"
+                tail -n ${KILLQUIT_LOG_LINES} "${LOG_DIR}"/catalina.out | tee -a "${ATTACHE_FILE}" | grep \"http:// | cut -d' ' -f1 | uniq -c >> "${ATTACHE_FILE}"
+            fi
         else
-                echo "File not found: ${TOMCAT_HOME}/logs/catalina.out. Skipping KILL_QUIT" >> "${ATTACHE_FILE}"
+            echo "Thread dump: ${CONTAINER_TYPE} logs collected via journalctl or ${LOG_DIR}" >> "${ATTACHE_FILE}"
         fi
 }
 
@@ -747,7 +1256,14 @@ send_Mail ()
 
 		log "INFO" "Sending mail notification (${HOSTNAME_SUBJECT}): ${short_message}"
 
-		mailx -s "${HOSTNAME_SUBJECT}: ${MemoryPrefix} ${short_message}" "${MAIL}" < "${ATTACHE_FILE}"
+		local wrapped_file="/var/tmp/xinit_mail_wrapped.$$"
+		if command -v fold &>/dev/null; then
+			fold -s -w 900 "${ATTACHE_FILE}" > "${wrapped_file}"
+			mailx -s "${HOSTNAME_SUBJECT}: ${MemoryPrefix} ${short_message}" "${MAIL}" < "${wrapped_file}"
+			rm -f "${wrapped_file}"
+		else
+			mailx -s "${HOSTNAME_SUBJECT}: ${MemoryPrefix} ${short_message}" "${MAIL}" < "${ATTACHE_FILE}"
+		fi
 
 	fi
 
@@ -756,7 +1272,7 @@ send_Mail ()
 send_report ()
 {
 	log "INFO" "Sending report by email to ${MAIL}"
-	
+
 	get_info
 	send_Mail "Xinit REPORT"
 }
@@ -791,7 +1307,7 @@ show_report ()
 	if [[ $(which less) ]]; then
 
 		less "${ATTACHE_FILE}"
-	
+
 	elif [[ $(which more) ]]; then
 
 		more "${ATTACHE_FILE}"
@@ -800,7 +1316,7 @@ show_report ()
 
 		cat "${ATTACHE_FILE}"
 	fi
-	
+
 	echo ""
 	echo " You can anytime use less or more commands to view the last report."
 	echo " Example: less ${ATTACHE_FILE}"
@@ -816,7 +1332,7 @@ list_parameters ()
 
 	local ALL_PARAMS
 	ALL_PARAMS=$(grep -v "^\#" "${LIB_DIR}"/default.cfg | grep -v "^$" | cut -d"=" -f1)
-	
+
 	for param in ${ALL_PARAMS}; do
 
 		echo "${param}"="${!param}"
@@ -862,11 +1378,11 @@ maintenance ()
 # XWiki availability. These informations will contain: URL, Users and Passwords.
 nagios_info ()
 {
-	
-if [[ ${CHECK_HTTP} == *yes*  ]]; then 
+
+if [[ ${CHECK_HTTP} == *yes*  ]]; then
 
 	echo "${USE_BASIC_AUTH} ${CHECK_HTTP_URL} ${HTACCESS_USERNAME} ${HTACCESS_PASSWORD} ${EXPECT_HTTP_RESPONSE_CODE} ${VERSION}"
-	
+
 else
 
 	echo "HTTP Check is not enabled in xinit!"
@@ -880,7 +1396,7 @@ start_openoffice ()
 	if [[ -x "${OO_DAEMON_PATH}" ]] && [[ ${OO_SERVER_PORT} -gt 1024 ]]; then
 
 		if ! grep -q "${OO_SERVER_PORT}" <<< "$(netstat -tpln)" ; then
-	
+
 	        	start-stop-daemon -c "${TOMCAT_USER}" -b --start --quiet --oknodo --exec "${OO_DAEMON_PATH}" -- -accept="socket,host=127.0.0.1,port=${OO_SERVER_PORT};urp;" -headless -nocrashreport -nodefault -nofirststartwizard -nolockcheck -nologo -norestore
 
 			sleep 2
@@ -890,7 +1406,7 @@ start_openoffice ()
                 		log "INFO" "OpenOffice successfuly started!"
 
 		        else
-	
+
 		                log "ERROR" "OpenOffice failed to start!"
 
 		        fi
@@ -909,7 +1425,7 @@ start_openoffice ()
 }
 
 stop_openoffice ()
-{	
+{
 	local OO_PID
 	OO_PID="$(pidof soffice.bin)"
 
@@ -932,14 +1448,14 @@ stop_openoffice ()
 		echo "OpenOffice Daemon is not running!"
 	fi
 }
- 
 
-# check_openoffice: This function checks if openoffice is running and 
+
+# check_openoffice: This function checks if openoffice is running and
 # starting it if not running. Only used for OO_SERVER_TYPE=1
 check_openoffice ()
 {
 	local TEST="$1"
-	
+
 	if [[ ${OO_CHECK} -eq 1 ]]; then
 	if [[ ${OO_SERVER_TYPE} -eq 1 ]]; then
 
@@ -947,7 +1463,7 @@ check_openoffice ()
 		if grep -q "${OO_SERVER_PORT}" <<< "$(netstat -tpln)" ; then
 			echo OK
 		else
-			if [[ ${TEST} -ne 1 ]]; then 
+			if [[ ${TEST} -ne 1 ]]; then
 	            echo "NOT Running. Starting it"
 				stop_openoffice
 				start_openoffice
@@ -957,7 +1473,7 @@ check_openoffice ()
 
 			fi
 		fi
-		
+
 	else
 
 		log "WARNING" "OpenOffice inline check works only for OO_SERVER_TYPE=1"
@@ -973,8 +1489,8 @@ command_exists () {
     type "$1" &> /dev/null ;
 }
 
-# checks if the required command to migrate the old configuration file to the new one are present 
-check_dependencies () 
+# checks if the required command to migrate the old configuration file to the new one are present
+check_dependencies ()
 {
 	RED=$(tput setaf 1) # Red
 	GREEN=$(tput setaf 2) # Green
@@ -1001,21 +1517,37 @@ check_dependencies ()
 
 run_sanitycheck_db ()
 {
-    if [[ "${DB_TYPE}" != "mysql" ]]; then
-        echo "Sanity check currently only supports MySQL."
-        return
-    fi
-	echo "On what database do you want to perform the Sanity Check? [default:xwiki]"
-	read -r sanitycheck_db
-	if [[ ${sanitycheck_db} == "" ]] ; then
-		sanitycheck_db="xwiki"
-	fi
+    case "${DB_TYPE}" in
+        "mysql")
+            echo "MySQL/MariaDB database to check [default: xwiki]:"
+            read -r sanitycheck_db
+            if [[ -z "${sanitycheck_db}" ]]; then
+                sanitycheck_db="xwiki"
+            fi
 
-	if [[ "$(mysql -N -s -u"${MYSQL_USER}" --password="${MYSQL_PASSWORD}" -h"${MYSQL_HOST}" -e "use ${sanitycheck_db};show tables" |grep xwikidoc)" == "" ]] ; then
-		echo "Database ${db} is not a valid XWiki Database"
-	else
-		mysql -t -u"${MYSQL_USER}" --password="${MYSQL_PASSWORD}" -h"${MYSQL_HOST}" "${sanitycheck_db}" < /var/lib/xinit/sanitycheck-my.sql
-	fi
+            if [[ "$(mysql -N -s -u"${MYSQL_USER}" --password="${MYSQL_PASSWORD}" -h"${MYSQL_HOST}" -e "use ${sanitycheck_db};show tables" | grep xwikidoc)" == "" ]]; then
+                echo "Database ${sanitycheck_db} is not a valid XWiki database"
+            else
+                mysql -t -u"${MYSQL_USER}" --password="${MYSQL_PASSWORD}" -h"${MYSQL_HOST}" "${sanitycheck_db}" < /var/lib/xinit/sanitycheck-my.sql
+            fi
+            ;;
+        "pgsql")
+            echo "PostgreSQL database to check [default: ${PGSQL_DATABASE}]:"
+            read -r sanitycheck_db
+            if [[ -z "${sanitycheck_db}" ]]; then
+                sanitycheck_db="${PGSQL_DATABASE}"
+            fi
+
+            if ! PGPASSWORD="${PGSQL_PASSWORD}" psql -U "${PGSQL_USER}" -h "${PGSQL_HOST}" -p "${PGSQL_PORT}" -d "${sanitycheck_db}" -c "\dt xwikidoc" 2>/dev/null | grep -q xwikidoc; then
+                echo "Database ${sanitycheck_db} is not a valid XWiki database"
+            else
+                PGPASSWORD="${PGSQL_PASSWORD}" psql -U "${PGSQL_USER}" -h "${PGSQL_HOST}" -p "${PGSQL_PORT}" -d "${sanitycheck_db}" -f /var/lib/xinit/sanitycheck-pg.sql
+            fi
+            ;;
+        "none")
+            echo "No database configured"
+            ;;
+    esac
 }
 
 run_spamdetection_db ()
@@ -1024,7 +1556,7 @@ run_spamdetection_db ()
         GREEN=$(tput setaf 2) # Green
         RST=$(tput sgr0) # Reset
         BOLD=$(tput bold)
-        
+
         if [[ "${DB_TYPE}" != "mysql" ]]; then
              echo "Spam detection currently only supports MySQL."
              return
@@ -1048,4 +1580,3 @@ run_spamdetection_db ()
            fi
         done
 }
-

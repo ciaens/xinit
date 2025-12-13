@@ -59,25 +59,42 @@ fi
 
 if [[ ! -d ${VAR_DIR} ]]; then
 	echo " Creating var folder: ${VAR_DIR} ..."
-	mkdir "${VAR_DIR}"
+	mkdir -p "${VAR_DIR}"
 fi
+
+# Xinit 2.0: Initialize detection
+require_systemd
+
+# only verbose mode for specific commands
+case "$1" in
+    detect|version|check-install)
+        VERBOSE_DETECTION="true"
+        ;;
+    *)
+        VERBOSE_DETECTION="false"
+        ;;
+esac
+
+detect_container_type
+resolve_container_paths
+detect_database_type
 
 export TOMCAT_HOME JAVA_HOME CATALINA_OPTS TOMCAT_USER LANG CATALINA_PID
+export CONTAINER_TYPE CONTAINER_VERSION CONTAINER_HOME CONTAINER_USER SERVICE_NAME
+export JETTY_HOME JETTY_PORT JETTY_STOP_PORT
+export XWIKI_INSTALL_DIR DATA_DIR LOG_DIR DB_TYPE
 
 if [[ -z "$1" ]]; then
-
 	show_help
 	exit 3
-
 fi
 
-#while [[ -n "$1" ]]; do
-case "$1" in 
+case "$1" in
 	start)
-		start_tomcat
+		start_container
 		;;
 	stop)
-		stop_tomcat
+		stop_container
 		;;
 	restart)
 		restart_container
@@ -152,8 +169,36 @@ case "$1" in
 	version)
 		echo ""
 		echo " Xinit version $VERSION"
-		echo " XWiki $(cat "${XWIKI_INSTALL_DIR}"/WEB-INF/version.properties)"
+		echo " Container: ${CONTAINER_TYPE} ${CONTAINER_VERSION}"
+		echo " Service: ${SERVICE_NAME}"
+		if [[ -f "${XWIKI_INSTALL_DIR}/WEB-INF/version.properties" ]]; then
+			echo " XWiki $(cat "${XWIKI_INSTALL_DIR}"/WEB-INF/version.properties | grep version | cut -d= -f2)"
+		fi
 		echo
+		;;
+	detect)
+		echo ""
+		echo "Xinit ${VERSION} - Container Detection"
+		echo "======================================"
+		echo "Container Type: ${CONTAINER_TYPE}"
+		echo "Container Version: ${CONTAINER_VERSION}"
+		echo "Container Home: ${CONTAINER_HOME}"
+		echo "Container User: ${CONTAINER_USER}"
+		echo "Service Name: ${SERVICE_NAME}"
+		echo "XWiki Install: ${XWIKI_INSTALL_DIR}"
+		echo "Data Directory: ${DATA_DIR}"
+		echo "Log Directory: ${LOG_DIR}"
+		echo "Database Type: ${DB_TYPE}"
+		echo "Java Home: ${JAVA_HOME}"
+		echo ""
+		;;
+	setup-systemd)
+		setup_systemd_override
+		echo ""
+		echo "Systemd override created successfully."
+		echo "Edit /etc/xinit/xinit.cfg to configure memory and JVM options."
+		echo "Then run: systemctl daemon-reload && systemctl restart ${SERVICE_NAME}"
+		echo ""
 		;;
 	*)
 		show_help

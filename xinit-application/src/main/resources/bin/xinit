@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+
+# XInit - XWiki Management Tool
+#
+# This script manages the XWiki instance availability and monitoring.
+
+VARS_FILE="/var/lib/xinit/vars"
+
+if [[ ! -e "${VARS_FILE}" ]]; then
+    echo
+    echo " Error: No vars file was found at ${VARS_FILE}! Exiting ..."
+    echo
+    exit 1
+else
+    . "${VARS_FILE}"
+fi
+
+for lib in ${LIBS_FILE}; do
+    if [[ ! -e "${LIB_DIR}/${lib}" ]]; then
+        echo
+        echo " Error: Could not find lib file: ${LIB_DIR}/${lib} . Exiting ..."
+        echo
+        exit 1
+    else
+        . "${LIB_DIR}"/"${lib}"
+    fi
+done
+
+if [[ -e "${CONF_DIR}/${XWIKI_CONF_FILE}" ]]; then
+    . "${CONF_DIR}"/"${XWIKI_CONF_FILE}"
+else
+    echo
+    echo " Warning: No conf file (${CONF_DIR}/${XWIKI_CONF_FILE}) was found. Using default configuration ..."
+    echo
+fi
+
+if [[ ! -d ${VAR_DIR} ]]; then
+    if mkdir -p "${VAR_DIR}" 2>/dev/null; then
+        echo " Creating var folder: ${VAR_DIR} ..."
+    else
+        :
+    fi
+fi
+
+# Xinit 2.0: Require systemd
+require_systemd
+
+# enable verbose detection for specific commands
+case "$1" in
+    detect|version|check-install)
+        VERBOSE_DETECTION="true"
+        ;;
+    *)
+        VERBOSE_DETECTION="false"
+        ;;
+esac
+
+detect_container_type
+resolve_container_paths
+detect_database_type
+
+export TOMCAT_HOME JAVA_HOME CATALINA_OPTS TOMCAT_USER LANG CATALINA_PID
+export CONTAINER_TYPE CONTAINER_VERSION CONTAINER_HOME CONTAINER_USER SERVICE_NAME
+export JETTY_HOME JETTY_PORT JETTY_STOP_PORT
+export XWIKI_INSTALL_DIR DATA_DIR LOG_DIR DB_TYPE
+
+# Main Dispatcher
+case "$1" in 
+    start)
+        start_container
+        ;;
+    stop)
+        stop_container
+        ;;
+    restart)
+        restart_container
+        ;;
+    report) 
+        send_report
+        ;;
+    show-report)
+        show_report
+        ;;
+    list-parameters)
+        list_parameters
+        ;;
+    check-proc)
+        check_proc
+        ;;
+    check-http)
+        FORCE="$2"
+        check_http "${FORCE}"
+        ;;
+    check-openoffice)
+        check_openoffice
+        ;;
+    test-http)
+        TEST_HTTP="1"
+        FORCE="$2"
+        check_http "${TEST_HTTP}"
+        ;;
+    test-proc)
+        TEST_PROC="1"
+        check_proc "${TEST_PROC}"
+        ;;
+    test-openoffice)
+        TEST_OPENOFFICE="1"
+        check_openoffice "${TEST_OPENOFFICE}"
+        ;;
+    maintenance)
+        ACTION="$2"
+        if [[ $ACTION =~ (check|on|off|^$) ]] ; then
+            maintenance "${ACTION}"
+        else
+            show_help
+            exit 1
+        fi
+        ;;
+    sanitycheck-db)
+        run_sanitycheck_db
+        ;;
+    spamdetection-db)
+        run_spamdetection_db
+        ;;
+    check-install)
+        check_install
+        ;;
+    check-dep)
+        check_dependencies
+        ;;
+    nagios-info)
+        nagios_info
+        ;;
+    timer)
+        ACTION="$2"
+        if [[ ${ACTION} =~ (check|on|off|^$) ]] ; then
+            manage_timer "${ACTION}"
+        else
+            show_help
+            exit 1
+        fi
+        ;;
+    version)
+        echo ""
+        echo " Xinit version $VERSION"
+        echo " Container: ${CONTAINER_TYPE} ${CONTAINER_VERSION}"
+        echo " Service: ${SERVICE_NAME}"
+        if [[ -f "${XWIKI_INSTALL_DIR}/WEB-INF/version.properties" ]]; then
+            echo " XWiki $(cat "${XWIKI_INSTALL_DIR}"/WEB-INF/version.properties | grep version | cut -d= -f2)"
+        fi
+        echo
+        ;;
+    detect)
+        echo ""
+        echo "Xinit ${VERSION} - Container Detection"
+        echo "======================================"
+        echo "Container Type: ${CONTAINER_TYPE}"
+        echo "Container Version: ${CONTAINER_VERSION}"
+        echo "Container Home: ${CONTAINER_HOME}"
+        echo "Container User: ${CONTAINER_USER}"
+        echo "Service Name: ${SERVICE_NAME}"
+        echo "XWiki Install: ${XWIKI_INSTALL_DIR}"
+        echo "Data Directory: ${DATA_DIR}"
+        echo "Log Directory: ${LOG_DIR}"
+        echo "Database Type: ${DB_TYPE}"
+        echo "Java Home: ${JAVA_HOME}"
+        echo ""
+        ;;
+    setup-systemd)
+        setup_systemd_override
+        echo ""
+        echo "Systemd override created successfully."
+        echo "The override file reads memory settings and JVM options from /etc/xinit/xinit.cfg"
+        echo ""
+        echo "To configure memory:"
+        echo "  Edit /etc/xinit/xinit.cfg and set:"
+        echo "    MEM_START=\"1024m\""
+        echo "    MEM_MAX=\"4096m\""
+        echo ""
+        echo "For Jetty, to add javaagent or custom JVM options:"
+        echo "  Edit /etc/xinit/xinit.cfg and set:"
+        echo "    XWIKI_OPTS=\"-Xms1024m -Xmx4096m -javaagent:/opt/glowroot/glowroot.jar\""
+        echo ""
+        echo "Then run: systemctl daemon-reload && systemctl restart ${SERVICE_NAME}"
+        echo ""
+        ;;
+    timer)
+        ACTION="$2"
+        if [[ ${ACTION} =~ (check|on|off|^$) ]] ; then
+            manage_timer "${ACTION}"
+        else
+            show_help
+            exit 1
+        fi
+        ;;
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        show_help
+        exit 1
+esac

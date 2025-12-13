@@ -28,8 +28,8 @@
     <version>9.11-5</version>
   </parent>
   <artifactId>xinit</artifactId>
-  <version>1.3.4-SNAPSHOT</version>
-  <name>XInit - Parent POM</name>
+  <version>2.0.0-SNAPSHOT</version>
+  <name>Xinit - Parent POM</name>
   <packaging>pom</packaging>
   <description>Admin tool to manager an XWiki/Tomcat instance</description>
   <scm>
@@ -46,6 +46,10 @@
     <developer>
       <id>aubincleme</id>
       <name>Clément Aubin</name>
+    </developer>
+    <developer>
+      <id>cchristiaens</id>
+      <name>Clément Christiaens</name>
     </developer>
   </developers>
   <properties>

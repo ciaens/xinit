@@ -35,6 +35,53 @@ Configuration is located in /etc/xinit/xinit.cfg with sensible defaults.
 
 Change Log
 ==========
+### Xinit Version 2.0 - 12/12/2025 ###
+#### Jetty Support (XINIT-16, XINIT-17)
+- Jetty container support
+- Detects Jetty via Debian packages, filesystem, or running processes
+- Jetty-specific start/stop using deb package scripts
+- Lock file management for process tracking
+- Log collection from /var/log/xwiki and journalctl
+
+#### Container Abstraction
+- Auto-detects container type: Jetty, Tomcat 9, Tomcat 10
+- Modern Debian 12/13 paths for all containers
+- Container-agnostic core functions
+
+#### Systemd Integration
+- Works with package-provided systemd units
+- Systemd override support for configuration
+- Memory and JVM agent configuration via xinit.cfg
+- Non-root restart via process signaling
+
+#### Database Support (XINIT-10, XINIT-11)
+- PostgreSQL fully supported
+- Auto-detects database type from Debian packages
+- Extracts credentials from hibernate.cfg.xml automatically
+- DB_TYPE: mysql, pgsql, none
+- PostgreSQL sanity check queries
+- Database-agnostic reporting
+
+#### Monitoring Enhancements
+- Systemd timer support (modern alternative to cronjobs)
+- Container-agnostic process checking
+- OOM killer detection in diagnostics reports
+- Checks journalctl, kern.log, and dmesg for OOM reaper events
+- Email subject prefixed with [OOM KILLER] when detected
+- Enhanced logging with container info
+- Better error messages and diagnostics
+
+#### Removed
+* Non-systemd operation (systemd now required)
+* Old function aliases (start_tomcat, etc.)
+* Legacy cronjob-only monitoring
+
+#### Changed
+* Container detection is now automatic
+* Database credentials auto-extracted from hibernate
+* Systemd is required for operation
+* Modern Debian paths are defaults
+
 ### Xinit Version 1.3 - 08/11/2023 ###
 * Added the possibility to run xinit with a non-root user.
 * Added the possibility to set the cronjob checks via xwiki.sh script.
