@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 
-##############################################################################
-# XINIT 2.0 - Modern Container Detection and Management
-# Supports: Jetty and Tomcat (9/10) with systemd-first architecture
-##############################################################################
-
 require_systemd ()
 {
     if ! command -v systemctl &>/dev/null; then
@@ -588,7 +583,9 @@ restart_container ()
 
     if systemctl list-unit-files | grep -q "^${SERVICE_NAME}"; then
         if [[ ${UID} -eq 0 ]]; then
-            systemctl restart "${SERVICE_NAME}"
+            systemctl stop "${SERVICE_NAME}"
+            sleep 3
+            systemctl start "${SERVICE_NAME}"
         else
             local pid=$(get_container_pid)
             if [[ -n "${pid}" ]]; then
