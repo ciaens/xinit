@@ -71,10 +71,27 @@ echo "  Service: ${SERVICE_NAME}"
 echo "  Database: ${DB_TYPE}"
 echo "  User: ${CONTAINER_USER}"
 
-#if [[ -n "${CONTAINER_USER}" ]] && id "${CONTAINER_USER}" &>/dev/null; then
-#    chown -R "${CONTAINER_USER}:${CONTAINER_USER}" /var/run/xinit 2>/dev/null || true
-#    echo "  Set ownership on /var/run/xinit"
-#fi
+# For legacy/manual Tomcat installs (no Debian package), install xwiki.service
+# if no systemd unit exists for the detected service name.
+if ! systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}"; then
+    if [[ -f etc/systemd/xwiki.service ]]; then
+        echo ""
+        echo "  No systemd unit found for ${SERVICE_NAME}, installing xwiki.service..."
+        local_service="/etc/systemd/system/xwiki.service"
+        cp etc/systemd/xwiki.service "${local_service}"
+        if [[ -n "${CONTAINER_USER}" ]] && id "${CONTAINER_USER}" &>/dev/null; then
+            sed -i "s/XWIKI_USER/${CONTAINER_USER}/" "${local_service}"
+            sed -i "s/XWIKI_GROUP/${CONTAINER_USER}/" "${local_service}"
+        else
+            sed -i '/^User=\|^Group=/d' "${local_service}"
+        fi
+        chmod 644 "${local_service}"
+        systemctl daemon-reload
+        systemctl enable xwiki.service
+        echo "  Installed and enabled xwiki.service for ${CONTAINER_USER:-root}"
+        SERVICE_NAME="xwiki.service"
+    fi
+fi
 
 echo ""
 echo "Installation complete!"

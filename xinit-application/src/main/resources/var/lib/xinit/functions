@@ -346,16 +346,30 @@ Environment="JAVA_OPTS=${JAVA_OPTS}"
 Environment="CATALINA_OPTS=${CATALINA_OPTS:--server -Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m}}"
 Environment="CATALINA_PID=${CATALINA_PID}"
 
-# XWiki data directory access
-ReadWritePaths=/var/lib/xwiki/data
-
 RestartSec=10s
+TimeoutStopSec=120s
 
-# Xinit runtime directory
+# Writable paths for Tomcat and XWiki
+ReadWritePaths=/var/lib/xwiki/data
+ReadWritePaths=${CONTAINER_BASE}
+ReadWritePaths=${LOG_DIR}
 ReadWritePaths=/var/run/xinit
 EOF
             ;;
     esac
+
+    # Append systemd hardening directives if enabled
+    if [[ "${SYSTEMD_HARDENING}" == "yes" ]]; then
+        local hardening_file="${LIB_DIR}/systemd-hardening.conf"
+        if [[ -f "${hardening_file}" ]]; then
+            cat "${hardening_file}" >> "${override_file}"
+            log "INFO" "Systemd hardening enabled (SYSTEMD_HARDENING=yes)"
+        else
+            log "ERROR" "Hardening file not found: ${hardening_file}"
+        fi
+    else
+        log "INFO" "Systemd hardening disabled (SYSTEMD_HARDENING=${SYSTEMD_HARDENING})"
+    fi
 
     chmod 644 "${override_file}"
     systemctl daemon-reload
@@ -382,18 +396,20 @@ start_container ()
         fi
     fi
 
+    # OpenOffice management runs regardless of systemd delegation,
+    # since Debian package service units call start_xwiki.sh/catalina.sh
+    # directly and never invoke xinit start.
+    if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then
+        stop_openoffice
+    fi
+    if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 1 ]]; then
+        start_openoffice
+    fi
+
     if [[ "${delegated_to_systemd}" == "false" ]]; then
         if is_container_running; then
             log "WARNING" "Container already running"
             return 0
-        fi
-
-        if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 0 ]]; then
-            stop_openoffice
-        fi
-
-        if [[ ${OO_CHECK} -eq 1 ]] && [[ ${OO_SERVER_TYPE} -eq 1 ]]; then
-            start_openoffice
         fi
 
         case "${CONTAINER_TYPE}" in
