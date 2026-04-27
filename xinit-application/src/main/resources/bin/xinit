@@ -140,6 +140,15 @@ case "$1" in
             exit 1
         fi
         ;;
+    cronjob)
+        ACTION="$2"
+        if [[ ${ACTION} =~ (check|on|off|^$) ]] ; then
+            cronjob "${ACTION}"
+        else
+            show_help
+            exit 1
+        fi
+        ;;
     version)
         echo ""
         echo " Xinit version $VERSION"
@@ -183,15 +192,6 @@ case "$1" in
         echo ""
         echo "Then run: systemctl daemon-reload && systemctl restart ${SERVICE_NAME}"
         echo ""
-        ;;
-    timer)
-        ACTION="$2"
-        if [[ ${ACTION} =~ (check|on|off|^$) ]] ; then
-            manage_timer "${ACTION}"
-        else
-            show_help
-            exit 1
-        fi
         ;;
     help|--help|-h)
         show_help

@@ -620,12 +620,12 @@ restart_container ()
     fi
 
     if [[ ${MAINTENANCE_ON_RESTARTS} == 1 ]] && [[ ${KEEP_MAINTENANCE} != 1 ]]; then
-        trap 'rm -f "${VAR_DIR}/maintenance" 2>/dev/null' SIGINT SIGQUIT SIGTERM TERM
+        # Best-effort: schedule deferred cleanup of the maintenance flag.
+        # This does not survive a reboot; manual cleanup may be needed.
         (
             sleep "${MAINTENANCE_TIME:-600}"
             rm -f "${VAR_DIR}/maintenance"
         ) &>/dev/null &
-        trap - SIGINT SIGQUIT SIGTERM TERM
     fi
 
     if [[ -n "${MAKE_FIRST_REQUEST}" ]] && [[ "${MAKE_FIRST_REQUEST}" != "no" ]]; then
@@ -721,16 +721,36 @@ check_http ()
 	log "INFO" "URL: ${CHECK_HTTP_URL}"
 	cat /dev/null > "${REQUEST_ERROR_OUTPUT}"
 
-	if [[ ${USE_BASIC_AUTH} == yes ]]; then
+	local curl_args=(
+		--write-out '%{http_code} %{time_total}'
+		--location-trusted
+		--max-time "${CHECK_HTTP_TIMEOUT}"
+		--retry "${CHECK_HTTP_TRIES}"
+		--retry-delay "${CHECK_HTTP_WAITRETRY}"
+		--silent
+		--show-error
+		--output /dev/null
+	)
 
-		RESPONSE_CODE="$(curl --write-out '%{http_code}' --digest --location-trusted --insecure -u "${HTACCESS_USERNAME}:${HTACCESS_PASSWORD}" --max-time "${CHECK_HTTP_TIMEOUT}" --retry "${CHECK_HTTP_TRIES}" --retry-delay "${CHECK_HTTP_WAITRETRY}" --silent --show-error --output /dev/null "${CHECK_HTTP_URL}" 2> "${REQUEST_ERROR_OUTPUT}")"
-		EXIT_CODE="$?"
-
-	elif [[ ${USE_BASIC_AUTH} == no ]]; then
-
-		RESPONSE_CODE="$(curl --write-out '%{http_code}' --digest --location-trusted --insecure --max-time "${CHECK_HTTP_TIMEOUT}" --retry "${CHECK_HTTP_TRIES}" --retry-delay "${CHECK_HTTP_WAITRETRY}" --silent --show-error --output /dev/null "${CHECK_HTTP_URL}" 2> "${REQUEST_ERROR_OUTPUT}")"
-		EXIT_CODE="$?"
+	if [[ "${USE_BASIC_AUTH}" == "yes" ]]; then
+		curl_args+=( -u "${HTACCESS_USERNAME}:${HTACCESS_PASSWORD}" )
+		if [[ "${HTTP_AUTH_TYPE}" == "digest" ]]; then
+			curl_args+=( --digest )
+		fi
 	fi
+
+	if [[ "${CHECK_HTTP_INSECURE}" == "yes" ]]; then
+		curl_args+=( --insecure )
+	fi
+
+	# LC_ALL=C ensures curl uses '.' as decimal separator regardless of system locale.
+	local curl_output
+	curl_output="$(LC_ALL=C curl "${curl_args[@]}" "${CHECK_HTTP_URL}" 2> "${REQUEST_ERROR_OUTPUT}")"
+	EXIT_CODE="$?"
+
+	# Split the write-out fields. Splitting before the response-code arithmetic
+	# below is required: leaving them concatenated would break the -eq comparison.
+	read -r RESPONSE_CODE TIME_TOTAL <<< "${curl_output}"
 
 	# DNS USE
 	if [[ ${EXIT_CODE} -eq 6 ]]; then
@@ -759,7 +779,21 @@ check_http ()
 			restart_container
 		fi
 	else
-			log "INFO" "wiki is available! Response code: ${RESPONSE_CODE} Expect Code: ${EXPECT_HTTP_RESPONSE_CODE} Exit Code: ${EXIT_CODE}"
+		# time_total is in seconds with decimals; convert to integer milliseconds.
+		local TIME_MS
+		TIME_MS=$(awk -v t="${TIME_TOTAL:-0}" 'BEGIN{printf "%d", t*1000}')
+		log "INFO" "wiki is available! Response code: ${RESPONSE_CODE} Expect Code: ${EXPECT_HTTP_RESPONSE_CODE} Exit Code: ${EXIT_CODE} Time: ${TIME_MS}ms"
+
+		# Slow-response alert: only fires for non-test invocations, outside maintenance.
+		# The "$1 -ne 1" guard mirrors the failure path so MAKE_FIRST_REQUEST warmups
+		# and `xinit test-http` don't generate noise.
+		if [[ "${SEND_SLOW_RESPONSE_ALERT}" == "yes" ]] \
+			&& [[ "$1" -ne 1 ]] \
+			&& [[ ${TIME_MS} -gt ${SLOW_RESPONSE_THRESHOLD:-10000} ]] \
+			&& [[ ! -f ${VAR_DIR}/maintenance ]]; then
+			log "WARNING" "Slow HTTP response: ${TIME_MS}ms (threshold: ${SLOW_RESPONSE_THRESHOLD}ms) URL: ${CHECK_HTTP_URL}"
+			send_Notification "Slow HTTP response: ${TIME_MS}ms (threshold: ${SLOW_RESPONSE_THRESHOLD}ms) URL: ${CHECK_HTTP_URL}"
+		fi
 	fi
 
 }
@@ -986,8 +1020,6 @@ send_Notification ()
                 MemoryPrefix="[OOM KILLER]"
         elif [[ ${HeapSpaceFound} != 0 ]]; then
                 MemoryPrefix="[Low Heap - ${MEM_MAX}]"
-        elif [[ ${PermgenSpaceFound} != 0 ]]; then
-                MemoryPrefix="[Low Permgen - ${MAX_PERM_SIZE}]"
         fi
 
 	if [[ ${SEND_MAIL_NOTIFICATION} == yes ]]; then
@@ -1053,7 +1085,7 @@ get_info ()
 	echo "#####SECTION IP_ADDRESSES#####" >> "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
 
-	/sbin/ifconfig | grep inet | tr -s ' ' | cut -d " " -f1,2,3 >> "${ATTACHE_FILE}"
+	ip -o addr show | awk '{print $2, $3, $4}' >> "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
 
 	echo "#####SECTION CONNECTION_TYPE_STATUS#####" >> "${ATTACHE_FILE}"
@@ -1062,14 +1094,25 @@ get_info ()
 	for port in ${CONNECTION_STATE_PORTS}; do
 
 		echo "Port: ${port}" >> "${ATTACHE_FILE}"
-		netstat -tn | grep -E "^tcp.*:$port" | tr -s " " | cut -d " " -f6 | sort | uniq -c >> "${ATTACHE_FILE}"
+		ss -tn state all "( sport = :${port} or dport = :${port} )" 2>/dev/null \
+			| awk 'NR>1 {print $1}' | sort | uniq -c >> "${ATTACHE_FILE}"
 		echo "" >> "${ATTACHE_FILE}"
 
 	done
 
 	echo "#####SECTION CONNECTION_APACHE_STATUS#####" >> "${ATTACHE_FILE}"
 	echo "" >> "${ATTACHE_FILE}"
-	curl http://127.0.0.1/server-status | sed -n '/^$/!{s/<[^>]*>/ /g;p;}' >> "${ATTACHE_FILE}"
+	if [[ "${COLLECT_APACHE_STATUS}" == "yes" ]]; then
+		local apache_code
+		apache_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1/server-status 2>/dev/null)
+		if [[ "${apache_code}" == "200" ]]; then
+			curl -s --max-time 5 http://127.0.0.1/server-status | sed -n '/^$/!{s/<[^>]*>/ /g;p;}' >> "${ATTACHE_FILE}"
+		else
+			echo "Apache server-status not reachable (HTTP ${apache_code:-no-response})" >> "${ATTACHE_FILE}"
+		fi
+	else
+		echo "Apache server-status collection disabled (set COLLECT_APACHE_STATUS=yes to enable)" >> "${ATTACHE_FILE}"
+	fi
 
 	echo "#####SECTION DISK_USAGE#####" >> "${ATTACHE_FILE}"
     echo "" >> "${ATTACHE_FILE}"
@@ -1160,30 +1203,32 @@ get_info ()
     echo "" >> "${ATTACHE_FILE}"
 
     HeapSpaceFound=0
-    PermgenSpaceFound=0
     OOMKillerFound=0
+    local logs_captured=0
 
     if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
         LAST_LOG_LINES="$(journalctl -u "${SERVICE_NAME}" -n "${LOG_LINE_NUMBER}" --no-pager | tee -a "${ATTACHE_FILE}")"
+        logs_captured=1
     else
         if [[ "${CONTAINER_TYPE}" == "jetty" ]]; then
             if [[ -f "${LOG_DIR}/xwiki.log" ]]; then
                 LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${LOG_DIR}"/xwiki.log | tee -a "${ATTACHE_FILE}")"
+                logs_captured=1
             elif [[ -f "${CONTAINER_HOME}/logs/xwiki.log" ]]; then
                 LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${CONTAINER_HOME}"/logs/xwiki.log | tee -a "${ATTACHE_FILE}")"
+                logs_captured=1
             fi
         elif [[ "${CONTAINER_TYPE}" == "tomcat" ]]; then
             if [[ -f "${LOG_DIR}/catalina.out" ]]; then
                 LAST_LOG_LINES="$(tail -n "${LOG_LINE_NUMBER}" "${LOG_DIR}"/catalina.out | tee -a "${ATTACHE_FILE}")"
+                logs_captured=1
             fi
         fi
     fi
 
-    if [[ $? == 0 ]]; then
+    if [[ ${logs_captured} -eq 1 ]]; then
         if grep -q -F "java.lang.OutOfMemoryError: Java heap space" <<< "${LAST_LOG_LINES}"; then
             HeapSpaceFound=1
-        elif grep -q -F "java.lang.OutOfMemoryError: PermGen space" <<< "${LAST_LOG_LINES}"; then
-            PermgenSpaceFound=1
         fi
     fi
 
@@ -1269,11 +1314,12 @@ send_Mail ()
 
 		log "INFO" "Sending mail notification (${HOSTNAME_SUBJECT}): ${short_message}"
 
-		local wrapped_file="/var/tmp/xinit_mail_wrapped.$$"
 		if command -v fold &>/dev/null; then
+			local wrapped_file
+			wrapped_file=$(mktemp /var/tmp/xinit_mail.XXXXXX) || return 1
+			trap "rm -f '${wrapped_file}'" RETURN
 			fold -s -w 900 "${ATTACHE_FILE}" > "${wrapped_file}"
 			mailx -s "${HOSTNAME_SUBJECT}: ${MemoryPrefix} ${short_message}" "${MAIL}" < "${wrapped_file}"
-			rm -f "${wrapped_file}"
 		else
 			mailx -s "${HOSTNAME_SUBJECT}: ${MemoryPrefix} ${short_message}" "${MAIL}" < "${ATTACHE_FILE}"
 		fi
@@ -1302,7 +1348,7 @@ send_Jabber_Message ()
 	else
 		log "INFO" "Sending jabber message ($(hostname)): ${short_message}"
 		local ips
-		ips="$(/sbin/ifconfig | grep inet | tr -s ' ' | cut -d " " -f1,2,3)"
+		ips="$(ip -o addr show | awk '{print $2, $3, $4}')"
 		local load
 		load="$(uptime)"
 		echo -e "${short_message} \n ****IPs**** \n ${ips} \n ****LOAD**** \n ${load}" | sendxmpp -r "$(hostname)" "${JABBER_USERS}"
@@ -1358,9 +1404,8 @@ list_parameters ()
 maintenance ()
 {
 
-    XINIT_INSTALL_USER=$(stat -c '%u' "${VAR_DIR}")
-    if [[ ${UID} != "${XINIT_INSTALL_USER}" ]] ; then
-        echo "Please use the right user (${XINIT_INSTALL_USER}) to manage maintenance mode."
+    if [[ ${UID} -ne 0 ]] && [[ "$(id -un)" != "${CONTAINER_USER}" ]]; then
+        echo "Run as root or ${CONTAINER_USER:-the container user} to manage maintenance mode."
         exit 1
     fi
 	## It only affects the check_proc and check_http commands, which have no effect in maintenance mode.
@@ -1387,14 +1432,21 @@ maintenance ()
 }
 
 
-# This function will be used to print information need for nagios to check
-# XWiki availability. These informations will contain: URL, Users and Passwords.
+# Prints the parameters Nagios needs to invoke the wiki availability check.
+# The HTACCESS_PASSWORD is masked with "***" by default; set
+# NAGIOS_INCLUDE_PASSWORD=yes to expose it in plaintext on the output line.
 nagios_info ()
 {
 
-if [[ ${CHECK_HTTP} == *yes*  ]]; then
+if [[ ${CHECK_HTTP} == "yes" ]]; then
 
-	echo "${USE_BASIC_AUTH} ${CHECK_HTTP_URL} ${HTACCESS_USERNAME} ${HTACCESS_PASSWORD} ${EXPECT_HTTP_RESPONSE_CODE} ${VERSION}"
+	local nagios_password
+	if [[ "${NAGIOS_INCLUDE_PASSWORD}" == "yes" ]]; then
+		nagios_password="${HTACCESS_PASSWORD}"
+	else
+		nagios_password="***"
+	fi
+	echo "${USE_BASIC_AUTH} ${CHECK_HTTP_URL} ${HTACCESS_USERNAME} ${nagios_password} ${EXPECT_HTTP_RESPONSE_CODE} ${VERSION}"
 
 else
 
@@ -1404,17 +1456,25 @@ fi
 
 }
 
+# Returns 0 if the given TCP port has a LISTEN socket, 1 otherwise.
+# Uses ss with an explicit sport filter so e.g. port 8100 doesn't match 18100.
+_port_listening ()
+{
+	local port="$1"
+	ss -tln "sport = :${port}" 2>/dev/null | awk 'NR>1 {found=1} END {exit !found}'
+}
+
 start_openoffice ()
 {
 	if [[ -x "${OO_DAEMON_PATH}" ]] && [[ ${OO_SERVER_PORT} -gt 1024 ]]; then
 
-		if ! grep -q "${OO_SERVER_PORT}" <<< "$(netstat -tpln)" ; then
+		if ! _port_listening "${OO_SERVER_PORT}" ; then
 
 	        	start-stop-daemon -c "${TOMCAT_USER}" -b --start --quiet --oknodo --exec "${OO_DAEMON_PATH}" -- -accept="socket,host=127.0.0.1,port=${OO_SERVER_PORT};urp;" -headless -nocrashreport -nodefault -nofirststartwizard -nolockcheck -nologo -norestore
 
 			sleep 2
 
-				if grep -q "${OO_SERVER_PORT}" <<< "$(netstat -tpln)"; then
+				if _port_listening "${OO_SERVER_PORT}"; then
 
                 		log "INFO" "OpenOffice successfuly started!"
 
@@ -1473,7 +1533,7 @@ check_openoffice ()
 	if [[ ${OO_SERVER_TYPE} -eq 1 ]]; then
 
 	    echo -n "Checking OpenOffice Server (type: 1) ... "
-		if grep -q "${OO_SERVER_PORT}" <<< "$(netstat -tpln)" ; then
+		if _port_listening "${OO_SERVER_PORT}" ; then
 			echo OK
 		else
 			if [[ ${TEST} -ne 1 ]]; then

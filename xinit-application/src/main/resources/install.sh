@@ -30,17 +30,13 @@ fi
 echo "Installing xinit files..."
 
 install -m 755 bin/xinit /usr/local/bin/xinit
-install -m 755 bin/xinit-manager /usr/local/bin/xinit-manager
-echo "  Installed executables to /usr/local/bin/"
+echo "  Installed executable to /usr/local/bin/"
 
 mkdir -p /var/lib/xinit
 cp -r var/lib/xinit/* /var/lib/xinit/
 chmod 755 /var/lib/xinit/functions
 chmod 755 /var/lib/xinit/check-xwiki-install
 echo "  Installed libraries to /var/lib/xinit/"
-
-install -m 755 etc/init.d/xwiki.sh /etc/init.d/xwiki.sh
-echo "  Installed init.d script to /etc/init.d/xwiki.sh"
 
 mkdir -p /etc/xinit
 if [[ ! -f /etc/xinit/xinit.cfg ]]; then
