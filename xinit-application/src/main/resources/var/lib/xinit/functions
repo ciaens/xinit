@@ -309,6 +309,23 @@ is_container_running ()
     fi
 }
 
+# Build `-javaagent:` flags from JVM_AGENTS (plural, Java agents) and an
+# `-agentpath:` flag from JVM_AGENTPATH (legacy, native agent) for backwards
+# compatibility. Prints the joined flag string to stdout.
+_build_agent_flags ()
+{
+    local flags=""
+    local entry
+    for entry in ${JVM_AGENTS}; do
+        flags="${flags} -javaagent:${entry}"
+    done
+    if [[ -n "${JVM_AGENTPATH}" ]]; then
+        flags="${flags} -agentpath:${JVM_AGENTPATH}"
+    fi
+    # Trim leading space
+    echo "${flags# }"
+}
+
 setup_systemd_override ()
 {
     if [[ ! -d "/etc/systemd/system" ]]; then
@@ -322,20 +339,27 @@ setup_systemd_override ()
     log "INFO" "Creating systemd override for ${SERVICE_NAME}..."
     mkdir -p "${override_dir}"
 
+    local agent_flags
+    agent_flags=$(_build_agent_flags)
+    local agent_suffix=""
+    [[ -n "${agent_flags}" ]] && agent_suffix=" ${agent_flags}"
+
     case "${CONTAINER_TYPE}" in
         "jetty")
             cat > "${override_file}" <<EOF
 [Service]
 # Xinit managed environment configuration
-Environment="XWIKI_OPTS=${XWIKI_OPTS:--Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m}}"
+Environment="XWIKI_OPTS=${XWIKI_OPTS:--Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m}}${agent_suffix}"
 Environment="JETTY_PORT=${JETTY_PORT:-8080}"
 Environment="JETTY_STOP_PORT=${JETTY_STOP_PORT:-8079}"
 
 RestartSec=10s
 TimeoutStopSec=120s
 
-# Xinit runtime directory
-ReadWritePaths=/var/run/xinit
+# Xinit runtime directory. Auto-created by `bin/xinit` on first invocation;
+# `-` prefix tolerates its absence between boot and first xinit CLI call
+# (avoids status=226/NAMESPACE on fresh boot when /run is tmpfs).
+ReadWritePaths=-/var/run/xinit
 EOF
             ;;
         "tomcat")
@@ -343,20 +367,48 @@ EOF
 [Service]
 # Xinit managed environment configuration
 Environment="JAVA_OPTS=${JAVA_OPTS}"
-Environment="CATALINA_OPTS=${CATALINA_OPTS:--server -Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m}}"
+Environment="CATALINA_OPTS=${CATALINA_OPTS:--server -Xms${MEM_START:-1024m} -Xmx${MEM_MAX:-2048m}}${agent_suffix}"
 Environment="CATALINA_PID=${CATALINA_PID}"
 
 RestartSec=10s
 TimeoutStopSec=120s
 
-# Writable paths for Tomcat and XWiki
+# Writable paths for Tomcat and XWiki. `-` on /var/run/xinit because it's
+# tmpfs and auto-recreated by `bin/xinit` on first invocation.
 ReadWritePaths=/var/lib/xwiki/data
 ReadWritePaths=${CONTAINER_BASE}
 ReadWritePaths=${LOG_DIR}
-ReadWritePaths=/var/run/xinit
+ReadWritePaths=-/var/run/xinit
 EOF
             ;;
     esac
+
+    # Extra environment files (observability stacks etc.) — configured via
+    # EXTRA_ENVIRONMENT_FILES in xinit.cfg. Each entry becomes an optional
+    # `EnvironmentFile=-<path>` line (the `-` means systemd ignores it if absent).
+    if [[ -n "${EXTRA_ENVIRONMENT_FILES}" ]]; then
+        {
+            echo ""
+            echo "# Extra environment files (EXTRA_ENVIRONMENT_FILES)"
+            for envfile in ${EXTRA_ENVIRONMENT_FILES}; do
+                echo "EnvironmentFile=-${envfile}"
+            done
+        } >> "${override_file}"
+    fi
+
+    # Writable directories for JVM agents (Glowroot data dir, OTEL log dir, etc.)
+    # — configured via JVM_AGENT_DATA_DIRS in xinit.cfg. Each becomes a
+    # `ReadWritePaths=` line. Only meaningful when SYSTEMD_HARDENING=yes; harmless
+    # otherwise.
+    if [[ -n "${JVM_AGENT_DATA_DIRS}" ]]; then
+        {
+            echo ""
+            echo "# Writable paths for JVM agents (JVM_AGENT_DATA_DIRS)"
+            for agent_dir in ${JVM_AGENT_DATA_DIRS}; do
+                echo "ReadWritePaths=${agent_dir}"
+            done
+        } >> "${override_file}"
+    fi
 
     # Append systemd hardening directives if enabled
     if [[ "${SYSTEMD_HARDENING}" == "yes" ]]; then
@@ -458,8 +510,10 @@ start_jetty ()
         export JETTY_DEBUG_PORT="${JVM_DEBUG_PORT:-5005}"
     fi
 
-    if [[ -n "${JVM_AGENTPATH}" ]]; then
-        XWIKI_OPTS="-agentpath:${JVM_AGENTPATH} ${XWIKI_OPTS}"
+    local agent_flags
+    agent_flags=$(_build_agent_flags)
+    if [[ -n "${agent_flags}" ]]; then
+        XWIKI_OPTS="${agent_flags} ${XWIKI_OPTS}"
     fi
 
     if [[ ${UID} -eq 0 ]]; then
@@ -501,8 +555,10 @@ start_tomcat ()
         CATALINA_OPTS="${CATALINA_OPTS} ${JVM_DEBUG_OPTS}"
     fi
 
-    if [[ -n "${JVM_AGENTPATH}" ]]; then
-        JAVA_OPTS="-agentpath:${JVM_AGENTPATH} ${JAVA_OPTS}"
+    local agent_flags
+    agent_flags=$(_build_agent_flags)
+    if [[ -n "${agent_flags}" ]]; then
+        CATALINA_OPTS="${CATALINA_OPTS} ${agent_flags}"
     fi
 
     if [[ ${UID} -eq 0 ]]; then

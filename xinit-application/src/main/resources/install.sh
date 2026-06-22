@@ -45,6 +45,9 @@ if [[ ! -f /etc/xinit/xinit.cfg ]]; then
 else
     echo "  Kept existing configuration at /etc/xinit/xinit.cfg"
 fi
+# Always refresh the template — it's an example, not user config.
+install -m 644 etc/xinit/observability.env.example /etc/xinit/observability.env.example
+echo "  Installed observability env template to /etc/xinit/observability.env.example"
 
 mkdir -p /var/run/xinit
 mkdir -p /var/log
