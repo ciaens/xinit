@@ -3,57 +3,64 @@
 Goal: everything later phases need to be developed and verified by people **and by agents**,
 without manual setup.
 
+Jira: XINIT-18 (test environment), XINIT-19 (CI).
+
 ## Tasks
 
-### 0.1 Test environment — `tests/env/` (done)
-- `xwiki-env.sh build <variant>` builds `xinit-test/xwiki:<variant>`. The image is Debian 13 with
-  systemd as PID 1, one official XWiki package, and is already provisioned:
-  - the main flavor is installed;
-  - `Admin:admin` has admin + programming rights;
-  - `standard:standard` is a plain user;
-  - superadmin is disabled.
-- `start` / `wait` / `exec` / `rm` run disposable instances. The repository is mounted at
-  `/src/xinit`.
-- How to use it: [../test-env.md](../test-env.md).
+### 0.1 Test environment: `tests/env/` (done)
+- `xwiki-env.sh build <variant>` builds a provisioned image `xinit-test/xwiki:<variant>`. It has
+  systemd as PID 1 and XWiki from a Debian package or as a WAR. The flavor is installed, the
+  `Admin:admin` and `standard:standard` accounts exist, and superadmin is disabled.
+- `start` / `wait` / `exec` / `rm` run disposable instances. `pull` / `push` exchange images with a
+  registry.
+- The variants are listed in `tests/env/variants`. Details are in [../test-env.md](../test-env.md).
+- Verified locally, on a cgroup v1 host: `tomcat10-pgsql`, `tomcat11-mariadb`, `xjetty-pgsql` and
+  `war-tomcat10-pgsql` (XWiki 18.9.0), and `tomcat10-mariadb-lts-debian12` (17.10.14).
+  `tomcat10-mysql-ubuntu2404` is left to CI: Docker Hub rate limits and the network policy of the
+  environment it was developed in blocked the Ubuntu image. The integration suite (baseline +
+  faults, 17 tests) passes on all five.
+- Facts found while building them, which the profiles of Phase 1 must also know:
+  - XWiki 18 needs Java 21. Debian 12 only has 17, so it runs the LTS.
+  - `xwiki-*-mysql` depends on Oracle's `mysql-server`, which Debian lacks (it has MariaDB).
+  - `xwiki-tomcat9-*` stopped at 16.10, and Debian 12 has no `tomcat9`: Tomcat 9 is dropped.
 
-Verified: `tomcat10-pgsql` (Debian 13, XWiki 18.9.0) builds from scratch, and a fresh container answers in about 1 minute with the accounts above.
+### 0.2 Code skeleton (done)
+- `bin/xinit` (help, version, the exit-code conventions) and `lib/xinit/core.sh`. The rest of
+  DESIGN §4 is created when its phase needs it. `xinit-application/` (1.3.x) is untouched until
+  2.0 replaces it in Phase 6, so the 1.3 line stays releasable.
+- `Makefile`: `lint`, `test-unit`, `test-integration VARIANT=…`, `test`, `images`, and `install` /
+  `uninstall` (`PREFIX`, `DESTDIR`).
 
-To do:
-- Build and verify the variants `tomcat11-mariadb`, `xjetty-pgsql`,
-  `tomcat9-mysql` (Debian 12 base), and a **WAR** variant (Debian 13 `tomcat10` + the XWiki WAR in
-  `/var/lib/tomcat10/webapps`, no `xwiki-*` package).
-- A GitHub Actions workflow that builds the variants weekly and pushes them to
-  `ghcr.io/<owner>/xinit-test-xwiki:<variant>`, so they are pulled instead of rebuilt. A provisioned
-  image is 1–2 GB and must not be committed to git.
+### 0.3 Lint and unit-test tooling (done)
+- `shellcheck -x -S warning` on every new shell file and on the tests. Exceptions are annotated in
+  the code.
+- Plain `bats` from the distribution package (1.10 on Debian 13 and Ubuntu 24.04), without
+  `bats-support`/`bats-assert`. The helpers in `tests/unit/helpers.bash` cover what the tests need.
+  `fake <cmd> <body>` puts a recording fake on `PATH`.
+- `tests/fixtures/<variant>/` holds real files copied from the images. It is filled by Phase 1,
+  together with the profiles that read them.
+- Formatting with `shfmt` is not adopted: it is not packaged where CI runs, and shellcheck covers
+  correctness.
 
-### 0.2 New tree skeleton
-- Create the layout of DESIGN §4. Keep `xinit-application/` (1.3.x) untouched until 2.0 replaces it
-  in Phase 6, so the 1.3 branch stays releasable.
-- Add a `Makefile` with `lint`, `test-unit`, `test-integration VARIANT=…` and `install`
-  (`PREFIX`, `DESTDIR`).
+### 0.4 CI (done, integration still to be run on GitHub)
+- `ci.yml`: lint + unit on every push and pull request. It passed on its first run.
+- `integration.yml`: one job per variant. It pulls the published image or builds it, then runs
+  `tests/integration`. It runs nightly, on demand, and on pull requests labelled `integration`.
+- `test-images.yml`: runs weekly or on demand. It builds each variant, runs the baseline tests on
+  it, then pushes it to `ghcr.io/<owner>/xinit-test-xwiki`.
+- The `Jenkinsfile` / Maven build are unchanged (XWiki's CI and release).
 
-### 0.3 Lint and unit-test tooling
-- `shellcheck -x` on every shell file, with no exceptions except annotated ones.
-- `shfmt -i 2 -ci -d` for formatting (optional; decide once).
-- `bats-core` + `bats-support` + `bats-assert`, vendored as git submodules under `tests/lib/` or
-  installed from the distribution package. Unit tests stub external commands (`systemctl`,
-  `dpkg-query`, `curl`, `jcmd`) with small fakes on `PATH`, using fixtures in `tests/fixtures/`.
-  Examples of fixtures: real `hibernate.cfg.xml` from each DB package, `systemctl show` outputs,
-  and `extension.xed`.
+Still to do:
+- Run `test-images.yml` once, to check the systemd containers boot on GitHub's cgroup v2 runners
+  and to publish the images. Then make the GHCR package public.
+- Run `integration.yml` once on every variant.
 
-### 0.4 CI
-- `.github/workflows/ci.yml`: run lint + unit on every push and PR (fast, no Docker images).
-- `.github/workflows/integration.yml`: pull or build the test images and run
-  `tests/integration` for each variant. Run it nightly, on demand, and on PRs labelled
-  `integration`.
-- Keep the `Jenkinsfile` / Maven build working (XWiki's CI and release).
-
-### 0.5 Test procedure
-- `docs/TESTING.md`: the procedure, the scenario catalogue (what to break, and what xinit must
-  report or do), and how an agent runs it (`tests/run.sh` → machine-readable summary).
+### 0.5 Test procedure (done)
+- [../TESTING.md](../TESTING.md): the procedure for agents, the fault library and the scenario
+  catalogue. `tests/run.sh` writes a `summary.json`.
 
 ## Acceptance
-- `make lint test-unit` is green locally and in CI.
-- `tests/env/xwiki-env.sh build` works for each listed variant, from scratch, on a cgroup v1 and a
-  cgroup v2 host.
+- `make lint test-unit` is green locally and in CI. **Met.**
+- Every listed variant builds from scratch on a cgroup v1 host and a cgroup v2 host. Locally: the
+  cgroup v1 host, five variants. On CI: pending.
 - An agent can follow `docs/TESTING.md` with no human help.

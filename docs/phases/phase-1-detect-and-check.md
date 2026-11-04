@@ -62,7 +62,7 @@ Common fillers, used by all profiles:
   the expected status.
 
 ## Acceptance
-- `xinit layout` is correct with **zero configuration** on `tomcat9/10/11-*` and `xjetty-*`, and
+- `xinit layout` is correct with **zero configuration** on `tomcat10/11-*` and `xjetty-*`, and
   with three lines of configuration on the WAR variant.
 - `xinit check --format nagios` can be used directly as a Nagios/Icinga plugin.
 - No command in this phase writes outside `/var/lib/xinit` or `/run/xinit` (checked in the

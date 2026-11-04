@@ -6,7 +6,7 @@ and tested, and each phase has its own document with tasks and acceptance criter
 | Phase | Theme | Outcome | Jira |
 |---|---|---|---|
 | [0](phases/phase-0-foundations.md) | Foundations | test environment, CI (shellcheck + bats), new tree skeleton, test procedure | XINIT-18, 19 |
-| [1](phases/phase-1-detect-and-check.md) | Detection + read-only checks | `xinit layout`, `xinit check` on Debian Tomcat 9/10/11, xjetty and declared WAR; text/JSON/Nagios output | XINIT-10, 11, 16, 17, 20, 24 |
+| [1](phases/phase-1-detect-and-check.md) | Detection + read-only checks | `xinit layout`, `xinit check` on Debian Tomcat 10/11, xjetty and declared WAR; text/JSON/Nagios output | XINIT-10, 11, 16, 17, 20, 24 |
 | [2](phases/phase-2-act.md) | Acting safely | `xinit watch` + restart policy, maintenance, systemd timer and drop-in, `OnFailure` notification, warm-up, non-root via polkit | XINIT-2, 14, 15, 21, 22 |
 | [3](phases/phase-3-diagnose-and-notify.md) | Diagnostics + notifications | `xinit report` bundle (jcmd, journal, DB activity, OOM), mail + webhook, Prometheus textfile | XINIT-4, 5, 7, 23, 27, 31 |
 | [4](phases/phase-4-containers.md) | Containers | in-container health check, sidecar image, compose/k8s examples, tested against the official `xwiki` image | XINIT-26 |

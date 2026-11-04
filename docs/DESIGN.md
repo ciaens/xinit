@@ -11,7 +11,7 @@ them. It must work for:
 
 | Install type | How XWiki runs | What xinit can do |
 |---|---|---|
-| **Debian/Ubuntu package, Tomcat** (`xwiki-tomcat{9,10,11}-*`; Tomcat 9 only up to XWiki 16.10) | `tomcatN.service`, plus the drop-in `xwiki-tomcatN-systemd.conf` | everything |
+| **Debian/Ubuntu package, Tomcat** (`xwiki-tomcat{10,11}-*`) | `tomcatN.service`, plus the drop-in `xwiki-tomcatN-systemd.conf` | everything |
 | **Debian/Ubuntu package, Jetty** (`xwiki-xjetty-*`) | `xwiki.service` | everything |
 | **WAR** in any servlet container (distribution Tomcat, a tarball Tomcat or Jetty, any distro) | a systemd unit the admin names, or start/stop commands | everything, once the admin declares the unit, webapp directory and log location |
 | **Container: in the XWiki container** | PID 1 is the servlet container, there is no systemd | checks and diagnostics only; the orchestrator restarts |
@@ -250,8 +250,11 @@ JVM agents and their `ReadWritePaths`, the `ss` port helper, wrapping long mail 
 ## 6. Decisions
 
 Settled with the project lead:
-1. **Supported distributions:** Debian 12 and 13 and Ubuntu 24.04, tested in CI. The RHEL 9 family
-   is supported through the `war` profile with a tarball Tomcat, tested in Phase 6.
+1. **Supported distributions:** Debian 12 and 13 and Ubuntu 24.04, tested in CI. On Debian 12, only
+   the LTS: XWiki 18 needs Java 21. **Tomcat 9 is not supported**: XWiki stopped packaging for it
+   at 16.10, and none of these distributions ships it. Older instances keep running xinit 1.3 until
+   they are upgraded, so 2.0 needs no compatibility with them. The RHEL 9 family is supported
+   through the `war` profile with a tarball Tomcat, tested in Phase 6.
 2. **Jabber/XMPP notifications are dropped.** The generic webhook replaces them.
 3. **OpenOffice/LibreOffice management is dropped.** XWiki starts and stops its own office server,
    and the 1.3 checks are no longer used.

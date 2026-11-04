@@ -15,6 +15,9 @@ The images are named `xinit-test/xwiki:<variant>`. A variant is written
 | Part | Meaning |
 |---|---|
 | `tomcat10-pgsql`, `xjetty-mariadb`… | the XWiki package `xwiki-<base>`, installed with every `xwiki-*` dependency at the package's newest version |
+
+There is no Tomcat 9 variant. `xwiki-tomcat9-*` stopped at XWiki 16.10, when XWiki moved to Jakarta
+EE, and no supported distribution ships `tomcat9` any more (Debian 12 only has `tomcat10`).
 | `war-tomcat10-pgsql`, `war-tomcat11-mariadb` | the XWiki WAR exploded in `/var/lib/tomcatN/webapps/xwiki`, with Debian's `tomcatN` package, the JDBC driver from the distribution, and the permanent directory `/var/lib/xwiki-war/data`, following the WAR installation guide |
 | `-lts` | XWiki from the LTS repository instead of stable |
 | `-debian12`, `-ubuntu2404` | the distribution; Debian 13 by default |
@@ -27,7 +30,6 @@ The images are named `xinit-test/xwiki:<variant>`. A variant is written
 | `war-tomcat10-pgsql` | stable | the `war` profile |
 | `tomcat10-mariadb-lts-debian12` | LTS | XWiki 18 needs Java 21, which Debian 12 does not ship |
 | `tomcat10-mysql-ubuntu2404` | stable | `xwiki-*-mysql` depends on Oracle's `mysql-server`: Ubuntu has it, Debian does not |
-| `tomcat9-mariadb-debian12` | 16.10 | legacy: `xwiki-tomcat9-*` stopped at 16.10, when XWiki moved to Jakarta EE (Tomcat 10+) |
 
 Each image is already provisioned, so the Distribution Wizard never shows. It has:
 
@@ -110,8 +112,8 @@ GitHub, so that it can be pulled without logging in.
   `docker commit`.
 - **`policy-rc.d` is removed from the base image.** The Debian image ships it to stop services from
   starting during `apt install`, which makes the package's DB setup fail.
-- **Dependencies pinned to one version.** A plain `apt install xwiki-tomcat9-mysql` fails once
-  `xwiki-common` has moved past the last Tomcat 9 version.
+- **Dependencies pinned to one version.** A plain `apt install xwiki-<variant>` fails when that
+  package lags behind `xwiki-common`, as `xwiki-tomcat9-*` does.
 - **Splitting the CA bundle.** Java's trust store only imports the first certificate of each file,
   so a CA bundle is split into one file per certificate.
 - **Why `XWiki.Admin` must exist.** The flavor's pages name it as their author. Without it, their

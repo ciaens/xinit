@@ -8,5 +8,3 @@ war-tomcat10-pgsql
 tomcat10-mariadb-lts-debian12
 # xwiki-*-mysql needs Oracle's mysql-server, which Ubuntu has and Debian does not.
 tomcat10-mysql-ubuntu2404
-# Legacy: XWiki 16.10, the last version packaged for Tomcat 9.
-tomcat9-mariadb-debian12
