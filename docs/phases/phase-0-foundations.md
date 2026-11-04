@@ -16,9 +16,9 @@ Jira: XINIT-18 (test environment), XINIT-19 (CI).
 - The variants are listed in `tests/env/variants`. Details are in [../test-env.md](../test-env.md).
 - Verified locally, on a cgroup v1 host: `tomcat10-pgsql`, `tomcat11-mariadb`, `xjetty-pgsql` and
   `war-tomcat10-pgsql` (XWiki 18.9.0), and `tomcat10-mariadb-lts-debian12` (17.10.14).
-  `tomcat10-mysql-ubuntu2404` is left to CI: Docker Hub rate limits and the network policy of the
-  environment it was developed in blocked the Ubuntu image. The integration suite (baseline +
-  faults, 17 tests) passes on all five.
+  The integration suite (baseline + faults, 17 tests) passes on all five.
+- Verified on GitHub's cgroup v2 runners (Test images workflow, run 1): all six variants build and
+  pass the baseline tests, `tomcat10-mysql-ubuntu2404` included.
 - Facts found while building them, which the profiles of Phase 1 must also know:
   - XWiki 18 needs Java 21. Debian 12 only has 17, so it runs the LTS.
   - `xwiki-*-mysql` depends on Oracle's `mysql-server`, which Debian lacks (it has MariaDB).
@@ -50,10 +50,10 @@ Jira: XINIT-18 (test environment), XINIT-19 (CI).
   it, then pushes it to `ghcr.io/<owner>/xinit-test-xwiki`.
 - The `Jenkinsfile` / Maven build are unchanged (XWiki's CI and release).
 
-Still to do:
-- Run `test-images.yml` once, to check the systemd containers boot on GitHub's cgroup v2 runners
-  and to publish the images. Then make the GHCR package public.
-- Run `integration.yml` once on every variant.
+Still to do, once the workflows are on the default branch (`workflow_dispatch` and `schedule`
+only run from there):
+- Publish the images with `test-images.yml`, then make the GHCR package public.
+- Run `integration.yml` on every variant.
 
 ### 0.5 Test procedure (done)
 - [../TESTING.md](../TESTING.md): the procedure for agents, the fault library and the scenario
@@ -61,6 +61,6 @@ Still to do:
 
 ## Acceptance
 - `make lint test-unit` is green locally and in CI. **Met.**
-- Every listed variant builds from scratch on a cgroup v1 host and a cgroup v2 host. Locally: the
-  cgroup v1 host, five variants. On CI: pending.
+- Every listed variant builds from scratch on a cgroup v1 host and a cgroup v2 host. **Met**: five
+  variants locally (cgroup v1), all six on GitHub (cgroup v2).
 - An agent can follow `docs/TESTING.md` with no human help.

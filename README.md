@@ -3,7 +3,7 @@
 Admin tool to manager an XWiki/Tomcat instance.
 
 * Project Leads:
-  * ???
+  * Clément Christiaens
 * Documentation & Download:
 * [Issue Tracker](http://jira.xwiki.org/browse/XINIT)
 * Communication: [Mailing List](http://dev.xwiki.org/xwiki/bin/view/Community/MailingLists), [IRC](http://dev.xwiki.org/xwiki/bin/view/Community/IRC)
