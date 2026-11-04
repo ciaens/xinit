@@ -42,6 +42,19 @@ if [[ ! -d ${VAR_DIR} ]]; then
     fi
 fi
 
+# Auto-clear stale maintenance flag. `restart_container` writes
+# `auto_clear_at:<epoch>` into the file; once the current epoch is past that,
+# any xinit invocation deletes the flag. Manual flags (created by `xinit
+# maintenance on`) contain "manual" and are never auto-cleared. Legacy flags
+# (no auto_clear_at: line) are treated as manual to stay backwards-compatible.
+if [[ -f "${VAR_DIR}/maintenance" ]]; then
+    expires_at=$(grep -oE '^auto_clear_at:[0-9]+' "${VAR_DIR}/maintenance" 2>/dev/null | cut -d: -f2)
+    if [[ -n "${expires_at}" ]] && [[ $(date +%s) -gt ${expires_at} ]]; then
+        rm -f "${VAR_DIR}/maintenance" "${VAR_DIR}/maintenance_lastmail_timestamp"
+        echo " Auto-cleared expired maintenance flag (expired at epoch ${expires_at})"
+    fi
+fi
+
 # Xinit 2.0: Require systemd
 require_systemd
 
