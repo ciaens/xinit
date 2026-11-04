@@ -30,7 +30,9 @@ Non-goals:
    - Scheduling uses systemd timers, with cron only as a fallback.
    - Restricted restart rights use polkit.
    - Secrets use systemd credentials or 0600 files.
-   - Thread dumps use `jcmd` (no `kill -3` into `catalina.out`).
+   - Thread dumps use `jcmd` when it is there. The XWiki Debian packages only pull in a JRE, which
+     has no `jcmd`; then xinit uses `kill -3` and reads the dump from the journal or the declared
+     log, in the window between before and after the signal.
 2. **Checks are read-only. Actions are separate and explicit.**
    - `xinit check` never changes anything.
    - `xinit watch`, run by the timer, is the only command that decides to act, and only within a
@@ -124,7 +126,7 @@ The XWiki version comes from `WEB-INF/../META-INF/extension.xed`, or from the RE
 | `db` | connect + trivial query with credentials from a 0600 file; connection count vs the pool limit | on if a client is installed |
 | `disk` | free space on the permanent dir, the DB data dir and the log dir | on |
 | `solr` | embedded Solr core sizes / remote Solr ping | later |
-| `config` | the 1.3 `check-install` checks rewritten: encoding, short URLs coherence, superadmin enabled (warn), `xwiki.cfg` secrets left at default | on demand (`xinit check --deep`) |
+| `config` | the 1.3 `check-install` checks rewritten: `hibernate.cfg.xml` readable by all users (the Debian package installs it 0644 with the DB password), encoding, short URLs coherence, superadmin enabled (warn), `xwiki.cfg` secrets left at default | on demand (`xinit check --deep`) |
 
 A check function receives the layout. It returns one or more result lines
 (`id|status|message|metric=value...`) and never exits the process.
@@ -160,7 +162,8 @@ unit's start.
 0600, and only the last `REPORT_KEEP` reports are kept. It contains:
 - layout and config summary, with secrets redacted;
 - check results;
-- `jcmd Thread.print -l` taken 3 times, 5 s apart; `GC.heap_info`; `VM.flags`; `VM.system_properties`
+- thread dumps, 3 times, 5 s apart: `jcmd Thread.print -l` when available, otherwise `kill -3`
+  plus the journal or log; with `jcmd`, also `GC.heap_info`, `VM.flags` and `VM.system_properties`
   with secrets redacted;
 - the last N lines of the journal / log;
 - `ss -tanp` summary per port;

@@ -27,8 +27,11 @@ It generates the following files and prints a diff before writing them:
   - `Restart=on-failure`, `RestartSec=`;
   - `OnFailure=xinit-notify@%n.service`;
   - optional `JVM_OPTS_APPEND` (heap, agents). For `tomcatN` these are appended to the package's
-    `JAVA_OPTS`, with `%` escaped. Verify how `/etc/default/tomcatN` and the drop-in `Environment=`
-    interact before choosing the mechanism;
+    environment, with `%` escaped. A drop-in `JAVA_OPTS` does **not** work for `tomcatN`: the start
+    script sources `/etc/default/tomcatN` and overrides it (verified in the fault tests). Use
+    `JDK_JAVA_OPTIONS`, which the `java` launcher reads itself. It works the same for Tomcat, xjetty
+    and WAR installs. Options on the command line still win over it, so detect an `-Xmx` already
+    there and report the conflict;
   - `ReadWritePaths=` for agent data dirs;
 - `xinit-watch@<instance>.{service,timer}`:
   - the service runs `User=xinit`, `StateDirectory=xinit`, `RuntimeDirectory=xinit`,
