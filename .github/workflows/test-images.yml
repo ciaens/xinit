@@ -1,6 +1,10 @@
 # Build the provisioned XWiki test images and publish them to GHCR, so that integration runs and
 # agents pull them instead of spending ~10 minutes building each one. An image is only pushed once
 # the baseline tests (tests/integration/00-env.bats) pass on it. See docs/test-env.md.
+#
+# A push that changes the test environment builds and checks every image, on any branch, but only
+# the default branch, the schedule and manual runs publish them: a feature branch never replaces
+# the published images.
 name: Test images
 on:
   workflow_dispatch:
@@ -10,6 +14,10 @@ on:
         required: false
   schedule:
     - cron: '41 3 * * 0'
+  push:
+    paths:
+      - 'tests/env/**'
+      - '.github/workflows/test-images.yml'
 permissions:
   contents: read
   packages: write
@@ -46,12 +54,14 @@ jobs:
           VARIANT: ${{ matrix.variant }}
         run: tests/run.sh --suite integration --variant "$VARIANT" --no-build --filter '^env:' --out results
       - name: Log in to GHCR
+        if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Push
+        if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
         env:
           VARIANT: ${{ matrix.variant }}
         run: |

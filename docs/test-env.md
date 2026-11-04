@@ -81,9 +81,11 @@ make images                                              # every variant in test
 
 ### Published images
 
-The **Test images** workflow (`.github/workflows/test-images.yml`) runs weekly or on demand. For
-each variant it builds the image, runs the baseline tests on it, and pushes it as
-`ghcr.io/<owner>/xinit-test-xwiki:<variant>` and `:<variant>-<XWiki version>`.
+The **Test images** workflow (`.github/workflows/test-images.yml`) runs weekly, on demand, and on
+every push that changes `tests/env/`. For each variant it builds the image and runs the baseline
+tests on it. It then pushes it as `ghcr.io/<owner>/xinit-test-xwiki:<variant>` and
+`:<variant>-<XWiki version>`, except on a push to a branch other than the default one. That
+branch still gets its images checked, but cannot replace the published ones.
 
 With `XINIT_TEST_REGISTRY=ghcr.io/<owner>`, `tests/run.sh` pulls a missing image instead of building
 it. You can also pull or push one by hand:
