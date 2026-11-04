@@ -9,7 +9,7 @@ machine-readable summary. The layers:
 | **unit** | functions in isolation; external commands (`systemctl`, `curl`, `dpkg-query`, `psql`, `jcmd`) are fakes on `PATH`; inputs are real files from `tests/fixtures/` | host | bats | seconds |
 | **integration** | xinit against a real XWiki in a systemd container, with faults injected | host → `docker exec` | bats, Docker, the test image | minutes |
 
-`xinit-application/` (1.3.x) is not linted or tested. It is legacy and is replaced in Phase 5.
+`xinit-application/` (1.3.x) is not linted or tested. It is legacy and is replaced in Phase 6.
 
 ## Running
 
@@ -213,9 +213,9 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | S-CONT-04 | 4 | network-only sidecar | http/rest/db checks only, the others `unknown` |
 | S-CONT-05 | 4 | just started | the grace period: not unhealthy while starting |
 
-### Packaging and migration: `70-install.bats`
+### Packaging and migration: `80-install.bats`
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
-| S-INST-01 | 5 | `make install DESTDIR=…` | exact file list; no write outside DESTDIR |
-| S-INST-02 | 5 | `.deb` install, then purge | user, units, polkit rule created, then removed; `/etc/xinit` kept on remove, removed on purge |
-| S-MIG-01 | 5 | 1.3.3 installed with its `install.sh` | `config migrate` + `setup --migrate`: same monitoring settings, 1.3 init script and cron disabled |
+| S-INST-01 | 6 | `make install DESTDIR=…` | exact file list; no write outside DESTDIR |
+| S-INST-02 | 6 | `.deb` install, then purge | user, units, polkit rule created, then removed; `/etc/xinit` kept on remove, removed on purge |
+| S-MIG-01 | 6 | 1.3.3 installed with its `install.sh` | `config migrate` + `setup --migrate`: same monitoring settings, 1.3 init script and cron disabled |

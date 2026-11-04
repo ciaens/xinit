@@ -126,7 +126,7 @@ The XWiki version comes from `WEB-INF/../META-INF/extension.xed`, or from the RE
 | `db` | connect + trivial query with credentials from a 0600 file; connection count vs the pool limit | on if a client is installed |
 | `disk` | free space on the permanent dir, the DB data dir and the log dir | on |
 | `solr` | embedded Solr core sizes / remote Solr ping | later |
-| `config` | the 1.3 `check-install` checks rewritten: `hibernate.cfg.xml` readable by all users (the Debian package installs it 0644 with the DB password), encoding, short URLs coherence, superadmin enabled (warn), `xwiki.cfg` secrets left at default | on demand (`xinit check --deep`) |
+| `config` | the 1.3 `check-install` checks rewritten: permissions of the files holding secrets, encoding, short URLs coherence, superadmin enabled (warn), `xwiki.cfg` secrets left at default | on demand (`xinit check --deep`) |
 
 A check function receives the layout. It returns one or more result lines
 (`id|status|message|metric=value...`) and never exits the process.
@@ -247,13 +247,22 @@ JVM agents and their `ReadWritePaths`, the `ss` port helper, wrapping long mail 
 - reports in `/var/tmp`;
 - `update.sh`.
 
-## 6. Open questions
+## 6. Decisions
 
-1. Minimum supported distros. Proposal: Debian 12/13 and Ubuntu 24.04 (tested in CI); RHEL 9
-   family with tarball Tomcat as WAR (tested in Phase 5).
-2. Is Jabber/XMPP still wanted? Proposal: drop it and use the generic webhook (Matrix, Mattermost,
-   Slack).
-3. Should OpenOffice/LibreOffice monitoring stay? XWiki now starts and stops its own LibreOffice
-   server. Proposal: an optional `office` check (port answering), with no start/stop.
-4. Spam detection (MySQL-only in 1.3): keep as `xinit db spam-report` for both MySQL and PostgreSQL,
-   or drop it?
+Settled with the project lead:
+1. **Supported distributions:** Debian 12 and 13 and Ubuntu 24.04, tested in CI. The RHEL 9 family
+   is supported through the `war` profile with a tarball Tomcat, tested in Phase 6.
+2. **Jabber/XMPP notifications are dropped.** The generic webhook replaces them.
+3. **OpenOffice/LibreOffice management is dropped.** XWiki starts and stops its own office server,
+   and the 1.3 checks are no longer used.
+4. **Spam detection is dropped.** An XWiki extension does the same job inside the wiki.
+
+## 7. Service hardening
+
+Hardening the XWiki service is a goal in its own right. It has its own phase,
+[Phase 5](phases/phase-5-security.md). In short:
+- `xinit setup` can write a hardening drop-in for the servlet unit, choosing one of several levels.
+- Each level is measured with `systemd-analyze security`, then tested twice: by a functional suite
+  (XWiki still works) and by an attack suite (what a script running inside XWiki can no longer do).
+- The strictest level only allows the JVM to be executed. That needs the service to start `java`
+  directly, without the packages' shell wrappers.

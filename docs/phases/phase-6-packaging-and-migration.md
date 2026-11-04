@@ -1,4 +1,4 @@
-# Phase 5 — Packaging, migration, release
+# Phase 6 — Packaging, migration, release
 
 Goal: existing 1.3 users can upgrade, new users install with one command, and 2.0.0 is released.
 

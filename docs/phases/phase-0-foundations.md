@@ -28,7 +28,7 @@ To do:
 
 ### 0.2 New tree skeleton
 - Create the layout of DESIGN §4. Keep `xinit-application/` (1.3.x) untouched until 2.0 replaces it
-  in Phase 5, so the 1.3 branch stays releasable.
+  in Phase 6, so the 1.3 branch stays releasable.
 - Add a `Makefile` with `lint`, `test-unit`, `test-integration VARIANT=…` and `install`
   (`PREFIX`, `DESTDIR`).
 
