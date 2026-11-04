@@ -9,19 +9,29 @@
 : "${XT_CONTAINER:?XT_CONTAINER is not set - run the tests through tests/run.sh}"
 : "${XT_VARIANT:?XT_VARIANT is not set - run the tests through tests/run.sh}"
 
-XT_BASE_URL="http://localhost:8080/xwiki"
-
-# The servlet container's unit, from the variant.
-case "$XT_VARIANT" in
-  xjetty-*) XT_UNIT=xwiki.service ;;
-  tomcat*-*) XT_UNIT="${XT_VARIANT%%-*}.service" ;;
-  *) XT_UNIT="" ;;
-esac
-case "$XT_VARIANT" in
-  *-pgsql) XT_DB_UNIT=postgresql.service ;;
-  *) XT_DB_UNIT=mariadb.service ;;
-esac
-export XT_BASE_URL XT_UNIT XT_DB_UNIT
+# The instance description written by tests/env/provision.sh (images built before it existed fall
+# back to guessing from the variant name).
+_xt_env="$(docker exec "$XT_CONTAINER" cat /etc/xinit-test-env 2>/dev/null || true)"
+_xt_get() { sed -n "s/^$1=//p" <<<"$_xt_env"; }
+XT_BASE_URL="$(_xt_get BASE_URL)"
+XT_UNIT="$(_xt_get UNIT)"
+XT_DB_UNIT="$(_xt_get DB_UNIT)"
+XT_CONFIG_DIR="$(_xt_get CONFIG_DIR)"
+: "${XT_BASE_URL:=http://localhost:8080/xwiki}"
+: "${XT_CONFIG_DIR:=/etc/xwiki}"
+if [ -z "$XT_UNIT" ]; then
+  case "$XT_VARIANT" in
+    xjetty-*) XT_UNIT=xwiki.service ;;
+    *) XT_UNIT="$(sed -E 's/^(war-)?(tomcat[0-9]+)-.*/\2/' <<<"$XT_VARIANT").service" ;;
+  esac
+fi
+if [ -z "$XT_DB_UNIT" ]; then
+  case "$XT_VARIANT" in
+    *-pgsql|*-pgsql-*) XT_DB_UNIT=postgresql.service ;;
+    *) XT_DB_UNIT=mariadb.service ;;
+  esac
+fi
+export XT_BASE_URL XT_UNIT XT_DB_UNIT XT_CONFIG_DIR
 
 # in_env <cmd...>: run a command in the container as root.
 in_env() { docker exec -i "$XT_CONTAINER" "$@"; }
@@ -122,12 +132,12 @@ heal_stop_db()       { in_env systemctl start "$XT_DB_UNIT"; }
 
 # A wrong DB password in hibernate.cfg.xml: XWiki can no longer connect after a restart.
 fault_db_password() {
-  in_env_sh "cp -a /etc/xwiki/hibernate.cfg.xml /etc/xwiki/hibernate.cfg.xml.xinit-test &&
-    sed -i 's|<property name=\"hibernate.connection.password\">[^<]*<|<property name=\"hibernate.connection.password\">wrong-password<|' /etc/xwiki/hibernate.cfg.xml &&
+  in_env_sh "cp -a $XT_CONFIG_DIR/hibernate.cfg.xml $XT_CONFIG_DIR/hibernate.cfg.xml.xinit-test &&
+    sed -i 's|<property name=\"hibernate.connection.password\">[^<]*<|<property name=\"hibernate.connection.password\">wrong-password<|' $XT_CONFIG_DIR/hibernate.cfg.xml &&
     systemctl restart $XT_UNIT"
 }
 heal_db_password() {
-  in_env_sh "mv /etc/xwiki/hibernate.cfg.xml.xinit-test /etc/xwiki/hibernate.cfg.xml &&
+  in_env_sh "mv $XT_CONFIG_DIR/hibernate.cfg.xml.xinit-test $XT_CONFIG_DIR/hibernate.cfg.xml &&
     systemctl restart $XT_UNIT"
 }
 
@@ -162,7 +172,7 @@ heal_cgroup_memory() {
 # heal_all: best effort, used by teardown so that one failed test does not poison the next.
 heal_all() {
   in_env_sh "pid=\$(systemctl show -p MainPID --value $XT_UNIT); [ \"\$pid\" != 0 ] && kill -CONT \$pid
-    [ -f /etc/xwiki/hibernate.cfg.xml.xinit-test ] && mv /etc/xwiki/hibernate.cfg.xml.xinit-test /etc/xwiki/hibernate.cfg.xml
+    [ -f $XT_CONFIG_DIR/hibernate.cfg.xml.xinit-test ] && mv $XT_CONFIG_DIR/hibernate.cfg.xml.xinit-test $XT_CONFIG_DIR/hibernate.cfg.xml
     restart=
     if ls /etc/systemd/system/$XT_UNIT.d/90-xinit-test-*.conf >/dev/null 2>&1; then
       rm -f /etc/systemd/system/$XT_UNIT.d/90-xinit-test-*.conf; systemctl daemon-reload; restart=1

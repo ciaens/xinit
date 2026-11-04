@@ -95,7 +95,7 @@ The levels are written by `xinit setup --harden=<level>` as
 | Level | Content (to be finalised by the tests) | Requirements |
 |---|---|---|
 | `baseline` | `ProtectHome`, `ProtectKernelTunables/Modules/Logs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `PrivateDevices`, `ProtectProc=invisible`, `CapabilityBoundingSet=` (keeping `CAP_NET_BIND_SERVICE` only if the port is < 1024), `RestrictSUIDSGID`, `RestrictRealtime`, `RestrictNamespaces`, `LockPersonality`, `SystemCallArchitectures=native`, `SystemCallFilter=@system-service` minus what the tests show XWiki never needs, `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK`, `UMask=0027` | none; it must be safe on every supported install |
-| `strict` | `baseline` + `NoExecPaths=/` and `ExecPaths=<JDK> <lib dirs>` + `ExecStart=` java directly + `TasksMax=` + `InaccessiblePaths=` for paths XWiki never reads | direct java start (§2) |
+| `strict` | `baseline` + `/etc` replaced by an allow-list (`TemporaryFileSystem=/etc:ro` + `BindReadOnlyPaths=`, see below) + `NoExecPaths=/` and `ExecPaths=<JDK> <lib dirs>` + `ExecStart=` java directly + `TasksMax=` + `InaccessiblePaths=` for paths XWiki never reads | direct java start (§2) |
 | `strict+office` | `strict` + the LibreOffice binaries in `ExecPaths=` (and their shell wrapper's needs) | only for wikis using office conversion |
 | `custom` | the admin's own drop-in, still measured and tested by `xinit harden test` | — |
 
@@ -105,11 +105,17 @@ Kept: most of the protection list, the dropped capabilities, `NoNewPrivileges`, 
 because the JIT needs W+X memory.
 
 To change:
-- **`TemporaryFileSystem=/etc:ro` + a bind-mount allow-list.** It hides `/etc/passwd` and
-  `/etc/group`, which breaks user lookups (`getpwuid`, used by the JVM and by libraries for
-  `user.home` / `user.name`). The list also has to be kept up to date per distribution and per Java
-  version. Prefer `InaccessiblePaths=` for the few sensitive files (`/etc/shadow`, `/etc/gshadow`,
-  `/etc/ssh`, `/etc/sudoers*`). The attack suite (§4.3) checks they are unreadable.
+- **`TemporaryFileSystem=/etc:ro` + a bind-mount allow-list.** This is kept as a goal of
+  `strict`: maximum isolation, close to a container. The tests must establish what hiding
+  `/etc/passwd` and `/etc/group` breaks before it is kept.
+  - User lookups (`getpwuid`) fail, which the JVM uses for `user.home` / `user.name`.
+  - Libraries that write under `user.home` are affected.
+  - The allow-list must be kept up to date per distribution and per Java version, so xinit derives
+    it from the layout and the JDK in use, rather than from a fixed list.
+
+  If the cost is too high, `strict` falls back to `InaccessiblePaths=` for the sensitive files.
+  `/etc/shadow`, `/etc/gshadow`, `/etc/sudoers*` and `/etc/ssh` are unreadable at **every** level,
+  which the attack suite checks.
 - **`ProcSubset=pid`.** It hides `/proc/meminfo`, `/proc/stat` and `/proc/cpuinfo`. The JVM's
   container detection and some monitoring agents (Glowroot) read them. Test it before keeping it.
 - **`PrivateUsers=yes`.** It drops supplementary groups and maps unknown owners to `nobody`. That

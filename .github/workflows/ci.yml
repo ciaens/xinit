@@ -1,0 +1,22 @@
+# Lint and unit tests: fast, no Docker. See docs/TESTING.md.
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  lint-unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck and bats
+        run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck bats
+      - name: Lint and unit tests
+        run: tests/run.sh --suite lint --suite unit --out results
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-unit-results
+          path: results

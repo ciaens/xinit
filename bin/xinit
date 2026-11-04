@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
+# ---------------------------------------------------------------------------
+# See the NOTICE file distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This is free software; you can redistribute it and/or modify it
+# under the terms of the GNU Lesser General Public License as
+# published by the Free Software Foundation; either version 2.1 of
+# the License, or (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this software; if not, write to the Free
+# Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+# 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+# ---------------------------------------------------------------------------
+# xinit: monitor XWiki instances. See docs/DESIGN.md.
+set -euo pipefail
+
+# The libraries: $XINIT_LIB_DIR, else ../lib/xinit next to this script, which holds both in the
+# source tree and once installed under a prefix (bin/ and lib/xinit/ side by side).
+if [ -z "${XINIT_LIB_DIR:-}" ]; then
+  _self="$(readlink -f "${BASH_SOURCE[0]}")"
+  XINIT_LIB_DIR="$(cd "$(dirname "$_self")/../lib/xinit" && pwd)"
+fi
+# shellcheck source=../lib/xinit/core.sh
+. "$XINIT_LIB_DIR/core.sh"
+
+usage() {
+  cat <<USAGE
+Usage: xinit [-i <instance>] <command> [options]
+
+Commands:
+  layout     show how this XWiki installation was detected
+  check      run the checks (read-only)
+  watch      run the checks and act on failures (restart policy)
+  report     build a diagnostics report
+  maint      maintenance mode: on [--for DURATION] | off | status
+  setup      install the systemd units and drop-ins (--undo to remove them)
+  version    print the version
+  help       print this help
+
+Only 'version' and 'help' are implemented yet.
+USAGE
+}
+
+main() {
+  local cmd="${1:-help}"
+  case "$cmd" in
+    version|--version) echo "xinit $XINIT_VERSION" ;;
+    help|--help|-h) usage ;;
+    layout|check|watch|report|maint|setup)
+      xinit_die "'$cmd' is not implemented yet" "$XINIT_EXIT_UNKNOWN" ;;
+    *)
+      usage >&2
+      xinit_die "unknown command: $cmd" "$XINIT_EXIT_USAGE" ;;
+  esac
+}
+
+main "$@"

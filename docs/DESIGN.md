@@ -11,7 +11,7 @@ them. It must work for:
 
 | Install type | How XWiki runs | What xinit can do |
 |---|---|---|
-| **Debian/Ubuntu package, Tomcat** (`xwiki-tomcat{9,10,11}-*`) | `tomcatN.service`, plus the drop-in `xwiki-tomcatN-systemd.conf` | everything |
+| **Debian/Ubuntu package, Tomcat** (`xwiki-tomcat{9,10,11}-*`; Tomcat 9 only up to XWiki 16.10) | `tomcatN.service`, plus the drop-in `xwiki-tomcatN-systemd.conf` | everything |
 | **Debian/Ubuntu package, Jetty** (`xwiki-xjetty-*`) | `xwiki.service` | everything |
 | **WAR** in any servlet container (distribution Tomcat, a tarball Tomcat or Jetty, any distro) | a systemd unit the admin names, or start/stop commands | everything, once the admin declares the unit, webapp directory and log location |
 | **Container: in the XWiki container** | PID 1 is the servlet container, there is no systemd | checks and diagnostics only; the orchestrator restarts |

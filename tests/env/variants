@@ -1,0 +1,12 @@
+# The test image variants that CI builds, publishes and tests (one per line).
+# <package variant or war-tomcatN-db>[-lts][-debian12|-ubuntu2404]; see xwiki-env.sh.
+tomcat10-pgsql
+tomcat11-mariadb
+xjetty-pgsql
+war-tomcat10-pgsql
+# XWiki 18 needs Java 21, which Debian 12 does not ship: Debian 12 runs the LTS.
+tomcat10-mariadb-lts-debian12
+# xwiki-*-mysql needs Oracle's mysql-server, which Ubuntu has and Debian does not.
+tomcat10-mysql-ubuntu2404
+# Legacy: XWiki 16.10, the last version packaged for Tomcat 9.
+tomcat9-mariadb-debian12

@@ -1,0 +1,61 @@
+# Integration tests in the systemd test containers, one job per image variant. The images are
+# pulled from GHCR when published (test-images.yml), and built otherwise (about 10 minutes each).
+# See docs/TESTING.md.
+name: Integration
+on:
+  workflow_dispatch:
+    inputs:
+      variants:
+        description: 'Space-separated variants (default: every variant in tests/env/variants)'
+        required: false
+  schedule:
+    - cron: '17 2 * * *'
+  pull_request:
+    types: [labeled, synchronize]
+permissions:
+  contents: read
+  packages: read
+jobs:
+  variants:
+    # On a pull request, only when it carries the "integration" label.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'integration')
+    runs-on: ubuntu-24.04
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        env:
+          VARIANTS: ${{ inputs.variants }}
+        run: |
+          v="${VARIANTS:-$(grep -v '^#' tests/env/variants)}"
+          echo "list=$(printf '%s\n' $v | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+  test:
+    needs: variants
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.variants.outputs.list) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats
+        run: sudo apt-get update -q && sudo apt-get install -y -q bats
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Integration tests
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          export XINIT_TEST_REGISTRY="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          tests/run.sh --suite integration --variant "$VARIANT" --out results
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-results-${{ matrix.variant }}
+          path: results

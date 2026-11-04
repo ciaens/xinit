@@ -10,6 +10,8 @@
 #   --no-build       fail instead of building a missing image
 #   --out DIR        results directory (default: tests/results/<UTC timestamp>)
 #
+# A missing image is pulled from $XINIT_TEST_REGISTRY when it is set, and built otherwise.
+#
 # Results: <out>/summary.json (read this), <out>/<suite>[-<variant>].tap and .log.
 # Exit code: 0 when every selected suite passed, 1 when a test failed, 2 on a setup error.
 set -uo pipefail
@@ -113,6 +115,9 @@ run_integration() {
   if [ -n "$REUSE" ]; then
     name="$REUSE"
   else
+    if ! docker image inspect "xinit-test/xwiki:$variant" >/dev/null 2>&1 && [ -n "${XINIT_TEST_REGISTRY:-}" ]; then
+      "$ENV_SH" pull "$variant" >"$OUT/pull-$variant.log" 2>&1 || echo "no published image for $variant, building it"
+    fi
     if ! docker image inspect "xinit-test/xwiki:$variant" >/dev/null 2>&1; then
       [ -n "$NO_BUILD" ] && { skipped_result "integration-$variant" "no image and --no-build"; FAILED=1; return; }
       echo "building xinit-test/xwiki:$variant (about 10 minutes, once)"
