@@ -21,7 +21,6 @@ XT_UNIT="$(_xt_get UNIT)"
 XT_DB_UNIT="$(_xt_get DB_UNIT)"
 XT_CONFIG_DIR="$(_xt_get CONFIG_DIR)"
 : "${XT_BASE_URL:=http://localhost:8080/xwiki}"
-: "${XT_CONFIG_DIR:=/etc/xwiki}"
 if [ -z "$XT_UNIT" ]; then
   case "$XT_VARIANT" in
     xjetty-*) XT_UNIT=xwiki.service ;;
@@ -32,6 +31,12 @@ if [ -z "$XT_DB_UNIT" ]; then
   case "$XT_VARIANT" in
     *-pgsql|*-pgsql-*) XT_DB_UNIT=postgresql.service ;;
     *) XT_DB_UNIT=mariadb.service ;;
+  esac
+fi
+if [ -z "$XT_CONFIG_DIR" ]; then
+  case "$XT_VARIANT" in
+    war-*) XT_CONFIG_DIR="/var/lib/${XT_UNIT%.service}/webapps/xwiki/WEB-INF" ;;
+    *) XT_CONFIG_DIR=/etc/xwiki ;;
   esac
 fi
 export XT_BASE_URL XT_UNIT XT_DB_UNIT XT_CONFIG_DIR
