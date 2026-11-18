@@ -238,6 +238,12 @@ wait_for 200 200 -u Admin:admin "$ADMIN_PAGE" || die "Admin:admin cannot open th
 if curl -s -u Admin:admin "$BASE_URL/bin/view/Main/WebHome" | grep -q "script macro is not allowed"; then
   die "Main.WebHome does not render its scripts: XWiki.Admin lacks programming rights"
 fi
+# The unit of the database, as installed: Oracle's MySQL, which the xwiki-*-mysql packages take
+# on Ubuntu, is mysql.service. MariaDB only answers to that name as an alias.
+if [ "$DB" != pgsql ] && ! systemctl cat mariadb.service >/dev/null 2>&1; then
+  systemctl cat mysql.service >/dev/null 2>&1 || die "neither mariadb.service nor mysql.service exists"
+  DB_UNIT=mysql.service
+fi
 cat > /etc/xinit-test-env <<EOF
 VARIANT=$VARIANT
 VERSION=$VERSION

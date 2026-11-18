@@ -258,6 +258,10 @@ print(re.findall(r"connection\.password\">([^<]*)<", text)[0])')"
   local before
   before="$(jvm_pid)"
   for _ in $(seq 1 15); do XT_HTTP_TIMEOUT=20 http_code "$(fault_url 'action=hog&mb=100')" >/dev/null; done
+  # What systemd and xinit made of it, for the log of a failure.
+  in_env systemctl show -p ActiveState,SubState,Result,NRestarts "$XT_UNIT" >&2
+  check oom process
+  echo "$output" >&2
   wait_healthy 300
   [ "$(jvm_pid)" != "$before" ]
   check oom process

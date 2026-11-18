@@ -93,6 +93,8 @@ teardown() {
   run in_env_sh "journalctl --since '-10min' --no-pager | grep -E 'oom-kill|OOM killer|Out of memory: Killed process'"
   echo "$output" >&2
   [ -n "$output" ]
+  # What systemd made of it, for the log of a failure: on cgroup v2 it knows of the kill.
+  in_env systemctl show -p ActiveState,SubState,Result,NRestarts "$XT_UNIT" >&2
   wait_healthy 300
   [ "$(jvm_pid)" != "$before" ]
 }

@@ -67,6 +67,11 @@ tap_result() {
     awk 'BEGIN{ORS=""} {printf "%s\"%s\"", (NR>1?",":""), $0}')"
   local status=passed
   if ((fail > 0 || rc != 0)); then status=failed; FAILED=1; fi
+  # What each failed test said, where a log is all there is to read: the output of a CI job.
+  if ((fail > 0)); then
+    echo "failed tests of $name:" >&2
+    awk '/^not ok /{show=1; print; next} /^ok /{show=0} show && /^#/' "$tap" >&2
+  fi
   RESULTS+=("{\"suite\":\"$name\",\"status\":\"$status\",\"passed\":$pass,\"failed\":$fail,\"skipped\":$skip,\"failures\":[$failures],\"tap\":\"$(basename "$tap")\"}")
 }
 
