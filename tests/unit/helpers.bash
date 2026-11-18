@@ -52,9 +52,18 @@ calls() { cat "$FAKEBIN/$1.calls" 2>/dev/null || true; }
 #       FAKE_DB_TCP=refused|timeout|dns   the database port does not accept connections
 #       FAKE_DB_LOGIN_ERROR=<message>     psql and mariadb fail with this message
 #       FAKE_RESTART_ERROR=<message>      systemctl restart fails with this message
+#       FAKE_ACT_STATE=<state>            the ActiveState of the unit that acts for the job
 #   - kill and sleep are fakes that do nothing: no real process gets a signal, no test waits.
+#       FAKE_ACT=1    while xinit sleeps, the requests of a job that is not root are taken, and
+#                     listed in $FAKEBIN/requests.log
+#   - id and stat say that xinit runs as root and that root owns the state directory, whoever
+#     runs the tests:
+#       FAKE_UID=<uid> / FAKE_USER=<name>   xinit runs as this user
+#       FAKE_STATE_OWNER=<uid>:<gid>        the state directory belongs to this user
+#       FAKE_FILE_OWNER=<uid>               the manifest of setup belongs to this user
+#       FAKE_GROUP=<name>                   the files of the installation belong to this group
 use_fixture() {
-  local variant="$1" pid _ppid _user comm
+  local variant="$1" pid _ppid _user comm real_stat
   XINIT_ROOT="$BATS_TEST_TMPDIR/root"
   XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc-xinit"
   FIXTURE="$FIXTURES/$variant"
@@ -74,6 +83,7 @@ use_fixture() {
       [ -z "${FAKE_RESTART_ERROR:-}" ] || { echo "$FAKE_RESTART_ERROR" >&2; exit 1; }
       exit 0
     fi
+    case "$1" in daemon-reload | enable | disable | start | stop) exit 0 ;; esac
     [ "$1" = show ] || exit 1
     shift
     property="" unit=""
@@ -85,6 +95,9 @@ use_fixture() {
       esac
     done
     file="$XINIT_ROOT/cmd/systemctl-show-${unit%.service}.txt"
+    case "$unit" in
+      xinit-act@*) [ "$property" = ActiveState ] && echo "${FAKE_ACT_STATE:-inactive}"; exit 0 ;;
+    esac
     if [ ! -f "$file" ]; then
       case "$property" in
         MainPID) echo 0 ;;
@@ -166,7 +179,27 @@ use_fixture() {
     esac'
 
   fake kill ''
-  fake sleep ''
+  # Time passes: with FAKE_ACT=1, root answers the requests of a job that is not root.
+  fake sleep '
+    [ -n "${FAKE_ACT:-}" ] || exit 0
+    for file in "${XINIT_RUN_DIR:-/nonexistent}"/*/request-*; do
+      [ -e "$file" ] || continue
+      echo "${file##*/}" >>"$FAKEBIN/requests.log"
+      rm -f "$file"
+    done'
+  # xinit runs as root, whoever runs the tests, and the state directory is root's.
+  fake id 'case "$1" in -u) echo "${FAKE_UID:-0}" ;; *) echo "${FAKE_USER:-root}" ;; esac'
+  real_stat="$(type -aP stat | grep -vF "$FAKEBIN/" | head -n 1)"
+  fake stat "
+    case \"\$*\" in
+      \"-c %u %a \"*) echo \"\${FAKE_FILE_OWNER:-0} \$($real_stat -c %a \"\${@: -1}\")\" ;;
+      \"-c %u \"*) owner=\"\${FAKE_STATE_OWNER:-0:0}\"; echo \"\${owner%%:*}\" ;;
+      \"-c %u:%g \"*) echo \"\${FAKE_STATE_OWNER:-0:0}\" ;;
+      \"-L -c %A %G \"*)
+        info=\"\$($real_stat \"\$@\")\" || exit 1
+        echo \"\${info%% *} \${FAKE_GROUP:-\${info#* }}\" ;;
+      *) exec $real_stat \"\$@\" ;;
+    esac"
 
   # The database clients: they answer 1 to SELECT 1, and record where the password came from.
   fake psql '

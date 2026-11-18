@@ -68,6 +68,10 @@ fi
 . "$XINIT_LIB_DIR/notify.sh"
 # shellcheck source=../lib/xinit/watch.sh
 . "$XINIT_LIB_DIR/watch.sh"
+# shellcheck source=../lib/xinit/warmup.sh
+. "$XINIT_LIB_DIR/warmup.sh"
+# shellcheck source=../lib/xinit/setup.sh
+. "$XINIT_LIB_DIR/setup.sh"
 
 usage() {
   cat <<USAGE
@@ -83,11 +87,16 @@ Commands:
   watch      run the checks and restart XWiki after repeated failures (--dry-run)
   report     build a diagnostics report
   maint      maintenance mode: on [--for DURATION] [--reason TEXT] | off | status
-  setup      install the systemd units and drop-ins (--undo to remove them)
+  setup      install the systemd units that run xinit by itself (--dry-run, --undo)
   version    print the version
   help       print this help
 
-'report' and 'setup' are not implemented yet.
+Run by the systemd units that 'setup' installs:
+  act        as root: restart XWiki or take a thread dump, on request of 'watch'
+  notify     notify that XWiki has crashed
+  warmup     send the first requests to XWiki after its start
+
+'report' is not implemented yet.
 USAGE
 }
 
@@ -154,7 +163,12 @@ main() {
       xinit_config_load
       xinit_cmd_watch "${ARGS[@]:1}" || exit $?
       ;;
-    report | setup)
+    setup | act | notify | warmup)
+      xinit_instance_resolve "$OPT_INSTANCE"
+      xinit_config_load
+      "xinit_cmd_$cmd" "${ARGS[@]:1}" || exit $?
+      ;;
+    report)
       xinit_instance_resolve "$OPT_INSTANCE"
       xinit_config_load
       xinit_die "'$cmd' is not implemented yet" "$XINIT_EXIT_UNKNOWN" ;;

@@ -104,17 +104,29 @@ xinit_state_dir() { _xinit_instance_dir STATE_DIR; }
 # xinit_run_dir: print the runtime directory of this instance.
 xinit_run_dir() { _xinit_instance_dir RUN_DIR; }
 
-# xinit_dir_ensure <directory>: create it, for its owner only. Returns 1 when that fails.
+# xinit_dir_ensure <directory>: create it, for its owner only. The directories above it are for
+# everyone to enter: the one of all the instances is shared with the user of the periodic job.
+# Returns 1 when that fails.
 xinit_dir_ensure() {
   [ -d "$1" ] && return 0
-  (umask 077 && mkdir -p -- "$1") 2>/dev/null
+  (umask 022 && mkdir -p -- "${1%/*}" && umask 077 && mkdir -- "$1") 2>/dev/null || [ -d "$1" ]
+}
+
+# xinit_state_is_mine: STATE_DIR does not exist yet, or belongs to this user. Root only looks at
+# the owner: a state it does not own is one it must not write in.
+xinit_state_is_mine() {
+  local top="${XINIT_CFG[STATE_DIR]-}" uid
+  [ -d "$top" ] || return 0
+  [ "$(id -u)" = 0 ] || return 0
+  uid="$(stat -c '%u' -- "$top" 2>/dev/null)" || return 0
+  [ "$uid" = 0 ]
 }
 
 # xinit_state_become_owner: root never writes in a directory that belongs to another user. When
 # STATE_DIR does, as it does once the periodic job runs as its own user, run this xinit command
 # again as that user. What it writes is then also readable by the periodic job.
 xinit_state_become_owner() {
-  local top="${XINIT_CFG[STATE_DIR]-}" owner uid gid
+  local top="${XINIT_CFG[STATE_DIR]-}" owner uid gid name output rc=0 environment=()
   [ "$(id -u)" = 0 ] || return 0
   [ -d "$top" ] || return 0
   owner="$(stat -c '%u:%g' -- "$top" 2>/dev/null)" || return 0
@@ -124,10 +136,20 @@ xinit_state_become_owner() {
   [ "$uid" != 0 ] || return 0
   command -v setpriv >/dev/null ||
     xinit_die "$top belongs to user $uid: setpriv (util-linux) is needed to write there as root"
+  command -v setsid >/dev/null || xinit_die "setsid (util-linux) is needed to write in $top as root"
   # Who asked, before it reads as the owner of the directory.
   XINIT_INVOKER="$(xinit_invoker)"
   export XINIT_INVOKER
-  exec setpriv --reuid="$uid" --regid="$gid" --clear-groups -- "$XINIT_SELF" "${XINIT_ARGV[@]}"
+  # That user gets nothing of root's: a session of its own, so no terminal; no input; and of the
+  # environment only what configures xinit.
+  environment=("PATH=$PATH")
+  while IFS= read -r name; do
+    case "$name" in XINIT_* | LANG | LC_ALL | TZ) environment+=("$name=${!name}") ;; esac
+  done < <(compgen -e)
+  output="$(env -i "${environment[@]}" setsid --wait setpriv --reuid="$uid" --regid="$gid" \
+    --clear-groups -- "$XINIT_SELF" "${XINIT_ARGV[@]}" </dev/null 2> >(cat >&2))" || rc=$?
+  [ -z "$output" ] || printf '%s\n' "$output"
+  exit "$rc"
 }
 
 # xinit_invoker: print the name of the user who runs this command, through sudo or not.
@@ -170,7 +192,8 @@ xinit_state_read() {
   [ -f "$file" ] && [ -r "$file" ] || return 2
   while IFS= read -r line || [ -n "$line" ]; do
     [[ "$line" =~ $re ]] || continue
-    _state[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]}"
+    # No control character: a value may end up on a terminal.
+    _state[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]//[[:cntrl:]]/ }"
   done <"$file"
 }
 
@@ -184,12 +207,19 @@ xinit_state_text() {
 # xinit_lock_acquire: take the lock of this instance, until this process ends. Returns 1 when
 # another process holds it. Does not wait.
 xinit_lock_acquire() {
-  local dir
+  local dir old_umask owner
   dir="$(xinit_run_dir)"
   xinit_dir_ensure "$dir" || xinit_die "cannot create $dir"
+  # Nothing is opened in a directory of another user: root least of all.
+  owner="$(stat -c '%u' -- "$dir" 2>/dev/null)" || owner=""
+  [ "$owner" = "$(id -u)" ] ||
+    xinit_die "$dir belongs to another user: use 'systemctl start xinit-watch@$XINIT_INSTANCE.service'"
+  old_umask="$(umask)"
+  umask 077
   if ! { exec {XINIT_LOCK_FD}>>"$dir/lock"; } 2>/dev/null; then
     XINIT_LOCK_FD=""
     xinit_die "cannot open the lock $dir/lock"
   fi
+  umask "$old_umask"
   flock -n "$XINIT_LOCK_FD"
 }

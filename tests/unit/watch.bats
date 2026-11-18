@@ -312,6 +312,65 @@ RESTART_CMD=myrestart --now wiki; touch $BATS_TEST_TMPDIR/ran \$(id)"
   [ "$(restarts)" = 0 ]
 }
 
+@test "watch: a RESTART_CMD that is only spaces restarts nothing, and says so" {
+  failing
+  conf <<<'RESTART_AFTER=1
+RESTART_CMD="   "'
+  watch_at 0
+  [ "$status" -eq 3 ]
+  [ "$(w restart_ok)" = False ]
+  [[ "$(calls logger)" == *"the restart failed: RESTART_CMD is empty"* ]]
+}
+
+@test "watch: a RESTART_CMD that leaves a process behind neither keeps the run waiting nor the lock" {
+  local real_sleep
+  failing
+  real_sleep="$(type -aP sleep | grep -vF "$FAKEBIN/" | head -n 1)"
+  # As a start script does: the process it starts keeps its output and every descriptor it got.
+  fake start-wiki "$real_sleep 20 &
+echo \$! >'$BATS_TEST_TMPDIR/left-behind'"
+  conf <<<"RESTART_AFTER=1
+RESTART_CMD=start-wiki"
+  SECONDS=0
+  watch_at 0
+  [ "$status" -eq 0 ]
+  [ "$(w restart_ok)" = True ]
+  [ "$SECONDS" -lt 15 ]
+  # The lock is free while that process still runs.
+  kill -0 "$(cat "$BATS_TEST_TMPDIR/left-behind")"
+  flock -n "$XINIT_RUN_DIR/default/lock" true
+  kill "$(cat "$BATS_TEST_TMPDIR/left-behind")"
+}
+
+@test "watch: without a unit and without RESTART_CMD, the restart fails with that reason" {
+  use_other_fixture war-tomcat10-pgsql
+  use_state
+  conf <<<"WEBAPP_DIR=/var/lib/tomcat10/webapps/xwiki
+BASE_URL=http://localhost:8080/xwiki
+RESTART_AFTER=1
+ACT_ON=http"
+  failing
+  watch_at 0
+  [ "$status" -eq 3 ]
+  [ "$(w action)" = restart ]
+  [ "$(w restart_ok)" = False ]
+  [[ "$(calls logger)" == *"neither UNIT nor RESTART_CMD is known"* ]]
+}
+
+@test "watch: a lock that has been held for too long is an error, not a quiet end" {
+  mkdir -p "$XINIT_RUN_DIR/default" "$STATE_DIR"
+  echo "LAST_RUN=$((NOW - 1300))" >"$STATE_DIR/state"
+  mkfifo "$BATS_TEST_TMPDIR/release"
+  flock "$XINIT_RUN_DIR/default/lock" cat "$BATS_TEST_TMPDIR/release" &
+  while flock -n "$XINIT_RUN_DIR/default/lock" true; do :; done
+  watch_at 0
+  echo go >"$BATS_TEST_TMPDIR/release"
+  wait
+  [ "$status" -eq 3 ]
+  [ "$(w reason)" = locked ]
+  [[ "$(calls logger)" == *"has held the lock for more than 20m"* ]]
+}
+
 @test "watch: only the last five thread dumps are kept" {
   local i dumps
   failing

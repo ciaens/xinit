@@ -186,11 +186,23 @@ MAINT_FILE() { echo "$XINIT_STATE_DIR/${1:-default}/maintenance"; }
   mkdir -p "$XINIT_STATE_DIR"
   fake id 'case "$1" in -u) echo 0 ;; *) echo root ;; esac'
   fake stat 'echo 990:985'
-  fake setpriv 'echo "invoker=${XINIT_INVOKER:-}" >>"$FAKEBIN/setpriv.env"'
-  SUDO_USER=alice run "$XINIT" -i default maint on --for 1h --reason "why not"
-  [ "$status" -eq 0 ]
+  fake setsid '[ "$1" = --wait ] && shift; exec "$@"'
+  # The path is written out: that user gets no variable of the test's environment.
+  fake setpriv "env >'$FAKEBIN/setpriv.env'; echo 'said by the owner'; echo 'an error' >&2; exit 7"
+  export SECRET_OF_ROOT=hunter2
+  SUDO_USER=alice run --separate-stderr "$XINIT" -i default maint on --for 1h --reason "why not"
+  # What that user said, and how it ended.
+  [ "$status" -eq 7 ]
+  [ "$output" = "said by the owner" ]
+  # shellcheck disable=SC2154  # $stderr is set by bats' run
+  [ "$stderr" = "an error" ]
   [ "$(calls setpriv)" = "--reuid=990 --regid=985 --clear-groups -- $XINIT -i default maint on --for 1h --reason why not" ]
-  [ "$(cat "$FAKEBIN/setpriv.env")" = "invoker=alice" ]
+  [ "$(calls setsid | cut -d' ' -f1-2)" = "--wait setpriv" ]
+  # It runs with what configures xinit, and nothing else of root's environment.
+  grep -qx "XINIT_INVOKER=alice" "$FAKEBIN/setpriv.env"
+  grep -qx "XINIT_STATE_DIR=$XINIT_STATE_DIR" "$FAKEBIN/setpriv.env"
+  grep -q "^PATH=" "$FAKEBIN/setpriv.env"
+  run ! grep -q "SECRET_OF_ROOT\|SUDO_USER\|^HOME=" "$FAKEBIN/setpriv.env"
   # Root itself wrote nothing.
   [ ! -e "$(MAINT_FILE)" ]
   # Reading needs no other user.
@@ -198,6 +210,15 @@ MAINT_FILE() { echo "$XINIT_STATE_DIR/${1:-default}/maintenance"; }
   run "$XINIT" maint status
   [ "$status" -eq 0 ]
   [ -z "$(calls setpriv)" ]
+}
+
+@test "maint: what is shown of a stored maintenance holds no control character" {
+  mkdir -p "$XINIT_STATE_DIR/default"
+  printf 'UNTIL=%s\nSINCE=%s\nBY=ro\033[2Jot\nREASON=a\033]0;title\007b\n' "$((NOW + 60))" "$NOW" >"$(MAINT_FILE)"
+  run "$XINIT" maint status
+  [ "$status" -eq 0 ]
+  [[ "$output" != *[[:cntrl:]]* ]]
+  [[ "$output" == *"set by ro"*"ot: a"*"b" ]]
 }
 
 @test "maint: root writes as root in a state directory that is root's, or that does not exist" {

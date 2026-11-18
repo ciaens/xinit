@@ -114,6 +114,10 @@ Unit tests (`tests/unit/`) run xinit on the host, against the real files of each
   waiting. Alone, it is for the commands that need no XWiki installation. After `use_fixture`, it
   is for `xinit watch`, whose scenarios also run as unit tests: `kill` and `sleep` are fakes, so no
   real process gets a signal.
+- In a fixture, `id` and `stat` are fakes too: xinit runs "as root" with a state directory that is
+  root's, whoever runs the tests. `FAKE_UID` makes it another user.
+- `xinit setup` writes under `XINIT_ROOT`, and its commands (`systemctl`, `systemd-sysusers`,
+  `chown`) are fakes.
 
 ## Fault library
 
@@ -196,10 +200,10 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | S-MAINT-02 | 2 | the state directory belongs to another user | what root sets belongs to that user, who reads it |
 | S-MAINT-03 | 2 | `maint on --for 3s`, wait | off by itself |
 
-### Acting: `50-watch.bats`
+### Acting: `50-watch.bats` (run by root), `60-setup.bats` (the installed units)
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
-| S-PROC-02 | 2 | `xinit setup`, then killed JVM | systemd restarts it; `xinit-notify@` ran once (journal); no `xinit watch` restart |
+| S-PROC-02 | 2 | `xinit setup`, then killed JVM | systemd restarts it; one crash notification (journal); no `xinit watch` restart; a restart someone asks for is not notified |
 | S-WATCH-01 | 2 | frozen JVM, `RESTART_AFTER=3` | runs 1–2 only count; run 3 restarts once (a frozen JVM gives no thread dump) |
 | S-WATCH-02 | 2 | a page that always answers 503, again after a restart | reason `cooldown`, no second restart |
 | S-WATCH-03 | 2 | maintenance on, failing page | no restart; the failure is counted |
@@ -208,11 +212,13 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | S-WATCH-06 | 2 | the lock is held | the run ends at once, reason `locked`, no check run |
 | S-WATCH-07 | 2 | healthy runs | reason `healthy`, count 0, nothing restarted |
 | S-WATCH-08 | 2 | a page that always answers 503 while the JVM runs, `RESTART_AFTER=1` | a thread dump of the running JVM is stored, 0600, before the restart |
-| S-SETUP-01 | 2 | `setup` then `setup --undo` | `systemctl cat <unit>` identical to before; no file left from the manifest |
-| S-SETUP-02 | 2 | `setup` with `JVM_OPTS_APPEND` | the JVM command line has both the package options and the added ones |
-| S-SETUP-03 | 2 | watch timer | runs as user `xinit`; a restart goes through the path unit, for `<unit>` only (the `xinit` user cannot restart another unit, nor run `systemctl restart` itself) |
-| S-WARMUP-01 | 2 | `WARMUP_URLS` with two URLs | both requested after each start (access log) |
-| S-SEC-01 | 2 | after any scenario | no xinit file world-readable; no password in `/proc/*/cmdline` captured during runs |
+| S-SETUP-01 | 2 | `setup --dry-run`, `setup`, `setup --undo` | the dry run writes nothing; after the undo, `systemctl cat <unit>` is identical to before and no unit or file of xinit is left |
+| S-SETUP-02 | 2 | `setup` with `JVM_OPTS_APPEND`, restart | the JVM has `JDK_JAVA_OPTIONS` and says it picked it up; its command line is the same as before |
+| S-SETUP-03 | 2 | `setup`, healthy | the job runs at once and a minute later, as `xinit`; every check could tell (`ok`), the db login included; root's `maint` writes as `xinit` |
+| S-SETUP-03 | 2 | `setup`, a page that always answers 503 | XWiki is restarted through the path unit, with a thread dump; the `xinit` user cannot run `systemctl restart`; a request by another name does nothing; the content of a request is not read |
+| S-WARMUP-01 | 2 | `WARMUP_URLS` with two URLs | both answered after a restart, and after a crash (journal) |
+| S-SEC-01 | 2 | `setup`, several runs | state and credentials are for their owner only; the database password is in the credentials file and nowhere else xinit wrote, and never in `/proc/*/cmdline` |
+| S-MULTI-01 | 2 | a second instance whose "wiki" is a stub HTTP service | each has its job and its state; the stub failing gets the stub alone restarted; a maintenance and an undo of one leave the other |
 
 ### Diagnostics and notifications: `50-report.bats`
 | Id | Phase | Setup | Expected |

@@ -68,7 +68,8 @@ setup() {
   xinit_state_write "$file" "A=1" "TEXT=a = \"b\" 'c' \$d" "EMPTY="
   [ "$(stat -c %a "$file")" = 600 ]
   [ "$(stat -c %a "$(xinit_state_dir)")" = 700 ]
-  [ "$(stat -c %a "$XINIT_STATE_DIR")" = 700 ]
+  # The directory of all the instances is shared with the user of the periodic job.
+  [ "$(stat -c %a "$XINIT_STATE_DIR")" = 755 ]
   xinit_state_read "$file" read
   [ "${read[A]}" = 1 ]
   [ "${read[TEXT]}" = "a = \"b\" 'c' \$d" ]
@@ -99,6 +100,17 @@ setup() {
   [ "${read[B]}" = 2 ]
   [ "${#read[@]}" -eq 2 ]
   [ ! -e "$BATS_TEST_TMPDIR/ran" ]
+}
+
+@test "state: a value read from a state file holds no control character" {
+  local file
+  local -A read=()
+  mkdir -p "$(xinit_state_dir)"
+  file="$(xinit_state_dir)/test"
+  printf 'TEXT=before\033]0;title\007\033[2Jafter\n' >"$file"
+  xinit_state_read "$file" read
+  [[ "${read[TEXT]}" != *[[:cntrl:]]* ]]
+  [[ "${read[TEXT]}" == before*after ]]
 }
 
 @test "state: reading tells a missing file from one that cannot be read" {

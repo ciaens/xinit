@@ -63,8 +63,29 @@ Reference: [../acting.md](../acting.md). What was decided while writing it:
   must not be taken for "off".
 - `MAINTENANCE_REMINDER` comes in Phase 3, with notifications.
 
-### 2.3 `xinit setup [--undo] [--dry-run]`
-It generates the following files and prints a diff before writing them:
+### 2.3 `xinit setup [--undo] [--dry-run]` (done)
+Reference: [../acting.md](../acting.md). What differs from the plan below, and why:
+- **Crash notification**: `ExecStopPost=` in the drop-in, not `OnFailure=`. With `Restart=`, a
+  unit enters the failed state only when systemd gives up restarting it, so `OnFailure=` would
+  stay silent for a crash that systemd repairs.
+- **Warm-up**: started by `ExecStartPost=` in the drop-in, not by `WantedBy=<UNIT>`. Nothing has
+  to be enabled then, so `--undo` has no link in `<UNIT>.wants/` to remove. (`WantedBy=` also
+  works after an automatic restart: tried on systemd 252 and 257.)
+- **Secrets**: no `LoadCredential=`. In the Docker test containers the credentials directory is
+  not visible to the service. The credentials file is owned by `xinit`, mode 0600.
+- **Reading the installation**: the job gets the group of each file it cannot read otherwise
+  (`SupplementaryGroups=`), with a read-only file system.
+- **Manifest**: in `/etc/xinit/setup/`, not in the state directory, which belongs to `xinit`:
+  `--undo` runs as root and removes what the manifest lists.
+- **Units**: one unit file per instance (`xinit-watch@<instance>.service`), not a template, since
+  their content differs per instance.
+- `ReadWritePaths=` for agent data directories is left to Phase 5, with the hardening.
+- **`RESTART_CMD`**: a job that is not root asks root for the restart in every case, and root
+  runs `RESTART_CMD`. The output of that command is not read, and it does not get the lock: a
+  start script that leaves the JVM behind would otherwise keep the run waiting.
+- A second run of setup removes what the first one wrote and it no longer writes.
+
+The plan was to generate the following files and print a diff before writing them:
 - the drop-in `/etc/systemd/system/<UNIT>.d/50-xinit.conf`:
   - `Restart=on-failure`, `RestartSec=`;
   - `OnFailure=xinit-notify@%n.service`;
@@ -95,8 +116,8 @@ It generates the following files and prints a diff before writing them:
 ### 2.4 Cron fallback (dropped)
 Every supported distribution has systemd, and a container never restarts itself (Phase 4).
 
-### 2.5 Multi-instance (XINIT-2)
-Each template unit is instantiated per instance. The test uses a second instance whose "wiki" is a
+### 2.5 Multi-instance (XINIT-2) (done)
+Each unit is written per instance. The test uses a second instance whose "wiki" is a
 small stub HTTP service in the same container. It proves that the state, the lock and the restart
 of one instance leave the other alone, without a second real XWiki and its image variant.
 

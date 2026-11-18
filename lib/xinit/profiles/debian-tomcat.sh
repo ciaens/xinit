@@ -104,3 +104,14 @@ xinit_profile_debian_tomcat_fill() {
   xinit_layout_set BASE_URL \
     "$(xinit_tomcat_base_url "$root/etc/tomcat$n" "${XINIT_LAYOUT[WEBAPP_DIR]}")" detected || true
 }
+
+# xinit_profile_debian_tomcat_files: print the files this profile reads, one per line.
+xinit_profile_debian_tomcat_files() {
+  local n="$_XINIT_TOMCAT_N" root="${XINIT_ROOT:-}" file
+  [ -n "$n" ] || return 0
+  printf '%s\n' "$root/etc/tomcat$n/server.xml"
+  for file in "$root/etc/tomcat$n"/Catalina/localhost/*.xml; do
+    [ -e "$file" ] && printf '%s\n' "$file"
+  done
+  return 0
+}

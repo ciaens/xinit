@@ -100,6 +100,19 @@
 # and run without a shell: no quotes, no variables, no pipes.
 #RESTART_CMD=
 
+# ---- What `xinit setup` installs ----------------------------------------------------------------
+# Run `xinit setup` again after changing one of these.
+
+# JVM options to add to the unit that runs XWiki, for example -Xmx4g. They are passed in
+# JDK_JAVA_OPTIONS, which the java launcher reads. No double quote and no backslash.
+#JVM_OPTS_APPEND=
+
+# The first requests after each start of XWiki, separated by spaces: one per wiki of a farm. A
+# path is taken under BASE_URL. Empty: the page of the http check.
+#WARMUP_URLS=
+# How long the first requests are tried, in all.
+#WARMUP_TIMEOUT=10min
+
 # ---- Maintenance and state --------------------------------------------------------------------
 
 # How long `xinit maint on` lasts without --for. A duration is a number of seconds, or numbers

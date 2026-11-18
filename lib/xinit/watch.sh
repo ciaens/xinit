@@ -41,8 +41,12 @@ xinit_config_define COOLDOWN 15min
 xinit_config_define MAX_RESTARTS 3
 xinit_config_define MAX_RESTARTS_WINDOW 1h
 
-# The state of the instance, as stored: FAILURES, FAILED, LAST_RUN, LAST_RESTART, RESTARTS (the
-# times of the restarts in the window), ESCALATED.
+# After how many seconds without a run that ended a held lock is an error.
+XINIT_WATCH_STUCK=1200
+
+# The state of the instance, as stored: FAILURES, FAILED, RESULTS (check:status:reason of the
+# last run), LAST_RUN, LAST_RESTART, RESTARTS (the times of the restarts in the window),
+# ESCALATED.
 declare -gA XINIT_WATCH_STATE=()
 # This run: ACTION (none, restart), REASON, FAILED (the failed checks, with their reasons),
 # FAILED_CHECKS (their names), COOLDOWN_LEFT, RESTART_OK, THREAD_DUMP.
@@ -76,6 +80,7 @@ _xinit_watch_state_save() {
   xinit_state_write "$(xinit_watch_state_file)" \
     "FAILURES=${XINIT_WATCH_STATE[FAILURES]}" \
     "FAILED=$(xinit_state_text "${XINIT_WATCH[FAILED]-}" 200)" \
+    "RESULTS=$(xinit_state_text "${XINIT_WATCH[RESULTS]-}" 400)" \
     "LAST_RUN=${XINIT_WATCH_STATE[LAST_RUN]}" \
     "LAST_RESTART=${XINIT_WATCH_STATE[LAST_RESTART]}" \
     "RESTARTS=${XINIT_WATCH_STATE[RESTARTS]}" \
@@ -85,7 +90,11 @@ _xinit_watch_state_save() {
 # _xinit_watch_classify <check...>: look at the results of the checks that count. Sets
 # XINIT_WATCH[FAILED] and [FAILED_CHECKS], and prints failed, unknown or healthy.
 _xinit_watch_classify() {
-  local name i failed="" names="" unknown=0
+  local name i failed="" names="" unknown=0 results=""
+  for i in "${!XINIT_RESULT_CHECK[@]}"; do
+    results+="${results:+ }${XINIT_RESULT_CHECK[$i]}:${XINIT_RESULT_STATUS[$i]}:${XINIT_RESULT_REASON[$i]}"
+  done
+  XINIT_WATCH[RESULTS]="$results"
   for name in "$@"; do
     for i in "${!XINIT_RESULT_CHECK[@]}"; do
       [ "${XINIT_RESULT_CHECK[$i]}" = "$name" ] || continue
@@ -259,12 +268,25 @@ xinit_cmd_watch() {
     [[ " ${names[*]} " == *" $name "* ]] || names+=("$name")
   done
 
+  # Root never writes in a directory that belongs to another user, and the periodic job would
+  # no longer read what root wrote there.
+  if [ "$dry" = false ] && ! xinit_state_is_mine; then
+    xinit_die "the state in ${XINIT_CFG[STATE_DIR]} belongs to the user of the periodic job: use 'systemctl start xinit-watch@$XINIT_INSTANCE.service', or 'xinit watch --dry-run'"
+  fi
   # A dry run changes nothing: it takes no lock either.
   if [ "$dry" = false ] && ! xinit_lock_acquire; then
     XINIT_WATCH[REASON]=locked
     XINIT_WATCH[MESSAGE]="another xinit watch is running for this instance"
+    # One run that never ends would stop the watch without a word.
+    now="$(xinit_now)"
+    if _xinit_watch_state_load && [ "${XINIT_WATCH_STATE[LAST_RUN]}" -gt 0 ] &&
+      [ "$((now - XINIT_WATCH_STATE[LAST_RUN]))" -gt "$XINIT_WATCH_STUCK" ]; then
+      XINIT_WATCH[MESSAGE]="another xinit watch has held the lock for more than $(xinit_duration_text "$XINIT_WATCH_STUCK"): no run has ended since"
+      xinit_log_journal "${XINIT_WATCH[MESSAGE]}"
+      rc="$XINIT_EXIT_UNKNOWN"
+    fi
     _xinit_watch_print "$format"
-    return 0
+    return "$rc"
   fi
   _xinit_watch_state_load ||
     xinit_die "cannot read $(xinit_watch_state_file): run this as root, or as its owner"

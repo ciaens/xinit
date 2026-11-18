@@ -6,7 +6,7 @@ load helpers
 setup() {
   local lib
   for lib in core config parse result layout check checks/process checks/http checks/rest \
-    checks/oom checks/db checks/disk state maint act notify watch; do
+    checks/oom checks/db checks/disk state maint act notify watch warmup setup; do
     # shellcheck disable=SC1090  # the libraries, as bin/xinit sources them
     source "$XINIT_REPO/lib/xinit/$lib.sh"
   done

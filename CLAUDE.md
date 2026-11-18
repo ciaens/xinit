@@ -16,11 +16,12 @@ hardening.
   - `TESTING.md` is the test procedure and the scenario catalogue;
   - `test-env.md` describes the test images;
   - `checks.md` is the reference of `xinit layout` and `xinit check`;
-  - `acting.md` is the reference of `xinit watch` and `xinit maint`, and of the state and lock of
-    an instance.
+  - `acting.md` is the reference of `xinit setup`, `xinit watch` and `xinit maint`, and of the
+    state and lock of an instance.
 
-What exists: `xinit layout` and `xinit check` (Phase 1), which only read, and `xinit maint` and
-`xinit watch` (Phase 2). `report` and `setup` are not implemented yet.
+What exists: `xinit layout` and `xinit check` (Phase 1), which only read, and `xinit maint`,
+`xinit watch` and `xinit setup` (Phase 2), with the commands the installed units run (`act`,
+`notify`, `warmup`). `report` is not implemented yet.
 
 Load the XWiki plugin from https://github.com/xwiki/xwiki-dev-llm (clone it, then
 `claude plugin marketplace add <clone>` and `claude plugin install xwiki@xwiki-dev-llm`). It holds
@@ -73,11 +74,18 @@ tests/fixtures/collect.sh                       # rebuild tests/fixtures/ from t
   - Root never writes in a directory that belongs to another user: a command that has to write
     there runs again as that user (`xinit_state_become_owner`). A state file is written with
     `xinit_state_write` and read with `xinit_state_read`, never sourced.
+  - Nothing is opened or written, as root, in a directory another user owns. What root reads
+    from such a directory (a state file) is data: never a path, never a command, and its control
+    characters are removed before it is shown.
+  - A command that runs as another user gets no terminal and none of root's environment
+    (`xinit_state_become_owner`).
   - The time comes from `xinit_now`, so that tests can set it with `XINIT_TEST_NOW`.
   - `kill` is a bash builtin, which a unit test cannot replace: send signals with `xinit_signal`.
     A unit test must never signal a real process: the PIDs of the fixtures are not ours.
 - **Configuration keys**: `etc/xinit.conf.example` is their reference. A unit test fails when it
   does not list every key with its real default.
+- **Unit test fakes**: a fake that xinit runs through `env -i` gets no variable of the test: write
+  paths out in its body (`"... >'$FAKEBIN/x'"`), never `"$FAKEBIN"` to be expanded when it runs.
 - **Tests**: assert on xinit's machine output (`--format json`, exit codes), never on human-readable
   text. For a check result, assert its `status` and its `reason`. Each xinit scenario test starts with its scenario id from `docs/TESTING.md`. A scenario
   whose phase is not implemented calls `skip "Phase N"`.
@@ -99,6 +107,12 @@ These are verified on XWiki 18.9.0 / 17.10 with the Debian packages. The details
   not on REST requests. The provisioned test images never show it.
 - A JVM stopped with `kill -STOP` gives no thread dump: `kill -3` stays pending. `systemctl
   restart` still works on it, since systemd sends `SIGCONT` after `SIGTERM`.
+- `OnFailure=` does not fire for a crash that `Restart=` repairs: the unit only enters the failed
+  state when systemd gives up. `ExecStopPost=` runs at each stop, with `$SERVICE_RESULT`.
+- `LoadCredential=` does not work in the Docker test containers: the credentials directory is
+  not visible to the service.
+- `systemctl show` works for an unprivileged user; `systemctl restart` answers "Access denied"
+  (the test images have no polkit).
 - `journalctl` exits 0 for a user who may not read the journal, and prints a notice instead.
 - `systemctl show -p ControlGroup` gives the path the kernel uses in its OOM messages, container
   prefix included.
@@ -111,6 +125,8 @@ These are verified on XWiki 18.9.0 / 17.10 with the Debian packages. The details
 
 - Docker may need starting: `dockerd > /tmp/dockerd.log 2>&1 &`. After a machine restart it can
   refuse to start because of a stale `/var/run/docker.pid`: remove that file first.
+- `docker exec` runs with umask 0000: what a test creates in a container is world-writable unless
+  it sets a mode.
 - A test container mounts the repository. Do not edit `bin/`, `lib/` or `tests/integration/`
   while an integration run is in progress.
 - Behind the session's HTTPS proxy, export `XINIT_TEST_CA=/root/.ccr/ca-bundle.crt` before

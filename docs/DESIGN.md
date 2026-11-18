@@ -185,21 +185,25 @@ carry the summary only.
 
 ### 3.6 systemd integration (`xinit setup`)
 
-`xinit setup` generates, and `xinit setup --undo` removes:
+`xinit setup` generates, and `xinit setup --undo` removes (reference: [acting.md](acting.md)):
 - `/etc/systemd/system/<UNIT>.d/50-xinit.conf`:
   - `Restart=on-failure`, `RestartSec=10`;
-  - `OnFailure=xinit-notify@%n.service`, which mails a crash report the moment systemd sees the
-    process die (no polling delay);
-  - optional JVM options (`JAVA_OPTS` additions such as heap or agents). These are **appended** to
-    the package's environment, never replacing it, and `%` is escaped.
+  - `ExecStopPost=`, which starts `xinit-notify@<instance>.service` the moment the unit stops
+    for another reason than being asked to (no polling delay). `OnFailure=` would not do: with
+    `Restart=`, a unit only enters the failed state once systemd gives up restarting it;
+  - `ExecStartPost=`, which starts the warm-up after each start;
+  - optional JVM options, in `JDK_JAVA_OPTIONS`, with `%` escaped.
 - `xinit-watch@<instance>.timer` / `.service`: a `Type=oneshot` service that runs as the `xinit`
-  user with hardening (`ProtectSystem=strict`, `StateDirectory=xinit`, `LoadCredential=` for
-  secrets).
-- `xinit-act@<instance>.path` / `.service`: the `xinit` user asks for an action by writing a
-  request file in `/run/xinit/`. The path unit then starts a root service that can do two fixed
-  things only: restart `<UNIT>`, and take a thread dump of its JVM. So xinit runs without root
-  (XINIT-15).
-- `xinit-warmup@<instance>.service`.
+  user with hardening (`ProtectSystem=strict`, `StateDirectory=`, `RuntimeDirectory=`). It gets
+  the groups it needs to read the journal and the installation's files.
+- `xinit-act@<instance>.path` / `.service`: the `xinit` user asks for an action by creating a
+  request file in `/run/xinit/<instance>/`. The path unit then starts a root service that can do
+  two fixed things only: restart `<UNIT>`, and take a thread dump of its JVM. So xinit runs
+  without root, polkit or sudo (XINIT-15).
+- `xinit-notify@<instance>.service` and `xinit-warmup@<instance>.service`.
+- The credentials file of the db check, owned by `xinit`. `LoadCredential=` would keep it from
+  the `xinit` user outside the service, but it does not work in every container.
+- A manifest of what was written, in `/etc/xinit/setup/`, which only root writes.
 
 Containers have no systemd: there xinit only checks, and the orchestrator restarts (Phase 4).
 

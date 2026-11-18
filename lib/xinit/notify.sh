@@ -27,3 +27,23 @@
 xinit_notify() {
   xinit_log_journal "notification ($1): $2"
 }
+
+# xinit_cmd_notify crash: the `xinit notify` command, which the unit of XWiki starts when it stops
+# for another reason than being asked to.
+xinit_cmd_notify() {
+  local event="${1:-}" unit line detail="" source
+  [ $# -eq 1 ] && [ "$event" = crash ] || xinit_die "usage: xinit notify crash" "$XINIT_EXIT_USAGE"
+  xinit_layout_resolve || true
+  unit="${XINIT_LAYOUT[UNIT]-}"
+  source="${XINIT_LAYOUT[LOG_SOURCE]-}"
+  [ -n "$unit" ] || xinit_die "notify: no XWiki installation is known for the instance $XINIT_INSTANCE"
+  # What systemd said about it.
+  if [[ "$source" == journal:* ]] && _xinit_journal -u "${source#journal:}" --since "-120s"; then
+    while IFS= read -r line; do
+      case "$line" in
+        *"Main process exited"* | *"Failed with result"*) detail="${line#*: }" ;;
+      esac
+    done < <(printf '%s\n' "$XINIT_JOURNAL_OUTPUT")
+  fi
+  xinit_notify crash "$unit stopped unexpectedly${detail:+: $detail}"
+}
