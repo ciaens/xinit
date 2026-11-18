@@ -6,6 +6,9 @@
 #   XT_CONTAINER   container name
 #   XT_VARIANT     image variant (tomcat10-pgsql, xjetty-mariadb...)
 
+# For run --separate-stderr.
+bats_require_minimum_version 1.5.0
+
 : "${XT_CONTAINER:?XT_CONTAINER is not set - run the tests through tests/run.sh}"
 : "${XT_VARIANT:?XT_VARIANT is not set - run the tests through tests/run.sh}"
 
@@ -180,4 +183,50 @@ heal_all() {
     systemctl start $XT_DB_UNIT
     if [ -n \"\$restart\" ]; then systemctl restart $XT_UNIT; else systemctl is-active -q $XT_UNIT || systemctl start $XT_UNIT; fi
     true" >/dev/null 2>&1 || true
+}
+
+# ---------------------------------------------------------------------------------------------
+# xinit itself. The repository is mounted at /src/xinit in the container. Its configuration is in
+# a directory of its own, which each test file starts from scratch.
+
+XT_XINIT_CONF_DIR=/run/xinit-test/etc
+# The webapp of a WAR variant, which xinit cannot detect.
+XT_WAR_WEBAPP_DIR="/var/lib/${XT_UNIT%.service}/webapps/xwiki"
+
+# is_war: this variant is a WAR installation.
+is_war() { [[ "$XT_VARIANT" == war-* ]]; }
+
+# xinit_conf [lines...]: replace xinit's configuration by what this variant needs to be complete
+# (nothing for a package, three lines for a WAR), followed by the given lines.
+xinit_conf() {
+  {
+    if is_war; then
+      printf '%s\n' "UNIT=$XT_UNIT" "WEBAPP_DIR=$XT_WAR_WEBAPP_DIR" "BASE_URL=$XT_BASE_URL"
+    fi
+    [ $# -eq 0 ] || printf '%s\n' "$@"
+  } | in_env_sh "rm -rf $XT_XINIT_CONF_DIR && mkdir -p $XT_XINIT_CONF_DIR/instances &&
+    cat > $XT_XINIT_CONF_DIR/xinit.conf"
+}
+
+# xinit <args...>: run xinit in the container as root. Sets $status, $output and $stderr.
+xinit() {
+  run --separate-stderr docker exec -e "XINIT_CONF_DIR=$XT_XINIT_CONF_DIR" "$XT_CONTAINER" \
+    /src/xinit/bin/xinit "$@"
+}
+
+# json <python expression on d>: evaluate it on $output parsed as JSON, and print the result.
+# A null prints as an empty line.
+json() {
+  # shellcheck disable=SC2154  # $output is set by bats' run
+  printf '%s\n' "$output" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+r = eval(sys.argv[1])
+print("" if r is None else r)' "$1"
+}
+
+# rest_version: the version XWiki itself reports.
+rest_version() {
+  in_env curl -s --max-time 30 -H 'Accept: application/json' "$XT_BASE_URL/rest/" |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])'
 }

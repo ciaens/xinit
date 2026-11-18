@@ -3,6 +3,9 @@
 # external commands xinit calls (systemctl, dpkg-query, curl, psql, jcmd...) are replaced by fakes,
 # and their inputs are real files copied from the test images into tests/fixtures/.
 
+# For run --separate-stderr.
+bats_require_minimum_version 1.5.0
+
 XINIT_REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 XINIT="$XINIT_REPO/bin/xinit"
 FIXTURES="$XINIT_REPO/tests/fixtures"
