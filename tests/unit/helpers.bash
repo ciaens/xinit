@@ -176,6 +176,19 @@ use_other_fixture() {
   use_fixture "$1"
 }
 
+# use_state: give xinit an empty configuration, state and runtime directories of its own, a fixed
+# clock ($NOW), and a fake logger. For the commands that need no XWiki installation.
+use_state() {
+  XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc-xinit"
+  XINIT_STATE_DIR="$BATS_TEST_TMPDIR/state"
+  XINIT_RUN_DIR="$BATS_TEST_TMPDIR/run"
+  NOW=1800000000
+  XINIT_TEST_NOW="$NOW"
+  mkdir -p "$XINIT_CONF_DIR/instances"
+  export XINIT_CONF_DIR XINIT_STATE_DIR XINIT_RUN_DIR XINIT_TEST_NOW NOW
+  fake logger ''
+}
+
 # conf <<EOF ... : write the configuration, $XINIT_CONF_DIR/xinit.conf.
 conf() { cat >"$XINIT_CONF_DIR/xinit.conf"; }
 

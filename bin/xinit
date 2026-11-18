@@ -58,6 +58,10 @@ fi
 . "$XINIT_LIB_DIR/checks/db.sh"
 # shellcheck source=../lib/xinit/checks/disk.sh
 . "$XINIT_LIB_DIR/checks/disk.sh"
+# shellcheck source=../lib/xinit/state.sh
+. "$XINIT_LIB_DIR/state.sh"
+# shellcheck source=../lib/xinit/maint.sh
+. "$XINIT_LIB_DIR/maint.sh"
 
 usage() {
   cat <<USAGE
@@ -72,15 +76,18 @@ Commands:
   check      run the checks (read-only)
   watch      run the checks and act on failures (restart policy)
   report     build a diagnostics report
-  maint      maintenance mode: on [--for DURATION] | off | status
+  maint      maintenance mode: on [--for DURATION] [--reason TEXT] | off | status
   setup      install the systemd units and drop-ins (--undo to remove them)
   version    print the version
   help       print this help
 
-'watch', 'report', 'maint' and 'setup' are not implemented yet.
+'watch', 'report' and 'setup' are not implemented yet.
 USAGE
 }
 
+# This script and its arguments, for a command that has to run again as another user.
+XINIT_SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+XINIT_ARGV=("$@")
 # The requested instance (-i), empty when not given.
 OPT_INSTANCE=""
 # The arguments left once the global options are taken out: the command and its own options.
@@ -131,7 +138,12 @@ main() {
       xinit_config_load
       xinit_cmd_check "${ARGS[@]:1}" || exit $?
       ;;
-    watch | report | maint | setup)
+    maint)
+      xinit_instance_resolve "$OPT_INSTANCE"
+      xinit_config_load
+      xinit_cmd_maint "${ARGS[@]:1}" || exit $?
+      ;;
+    watch | report | setup)
       xinit_instance_resolve "$OPT_INSTANCE"
       xinit_config_load
       xinit_die "'$cmd' is not implemented yet" "$XINIT_EXIT_UNKNOWN" ;;

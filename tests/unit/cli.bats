@@ -24,8 +24,10 @@ load helpers
 }
 
 @test "cli: a command that is not implemented yet exits unknown (3)" {
-  run "$XINIT" check
+  export XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc"
+  run "$XINIT" watch
   [ "$status" -eq 3 ]
+  [[ "$output" == *"not implemented yet"* ]]
 }
 
 @test "cli: works through a symlink, as when installed with one" {

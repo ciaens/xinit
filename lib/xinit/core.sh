@@ -44,3 +44,10 @@ xinit_die() {
   xinit_log error "$1"
   exit "${2:-$XINIT_EXIT_UNKNOWN}"
 }
+
+# xinit_log_journal <message...>: record in the system log what xinit changed, for this instance.
+# Best effort: without logger, or without a system log, the change still happens.
+xinit_log_journal() {
+  command -v logger >/dev/null || return 0
+  logger -t xinit -- "instance $XINIT_INSTANCE: $*" 2>/dev/null || true
+}

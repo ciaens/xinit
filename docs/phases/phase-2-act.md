@@ -24,8 +24,11 @@ What Phase 1 built or found, that this phase has to use:
 ## Tasks
 
 ### 2.1 `xinit watch`
-- `flock` on `/run/xinit/<instance>.lock`. State lives in `/var/lib/xinit/<instance>/state`
-  (failure counters, last restart times, maintenance expiry).
+- `flock` on `/run/xinit/<instance>/lock` (done: `xinit_lock_acquire`). Each instance has its own
+  runtime directory, which fits `RuntimeDirectory=xinit/%i`: stopping one instance's service
+  cannot remove another's files.
+- State lives in `/var/lib/xinit/<instance>/state` (failure counters, last restart times). The
+  state files and the duration parser exist (`lib/xinit/state.sh`).
 - Restart policy. The algorithm is in DESIGN §3.4. Defaults, decided:
   - `ACT_ON`: `process` crit, `http` crit, and `oom` crit `heap`;
   - `RESTART_AFTER=3` consecutive failed runs, with one run per minute;
@@ -39,9 +42,14 @@ What Phase 1 built or found, that this phase has to use:
 - `--dry-run` shows what it would do.
 - Notification hook: a stub that logs to the journal. Mail and webhook come in Phase 3.
 
-### 2.2 Maintenance
-- `xinit maint on [--for DURATION] [--reason TEXT] | off | status`.
-- The expiry is stored in the state. `watch` ignores the failures but still records them.
+### 2.2 Maintenance (done, except its use by `watch`)
+- `xinit maint on [--for DURATION] [--reason TEXT] | off | status`. Reference:
+  [../acting.md](../acting.md).
+- The expiry is stored in `/var/lib/xinit/<instance>/maintenance`, a file of its own: `maint`
+  never waits for a `watch` run. Without `--for` it lasts `MAINT_DURATION` (2 hours).
+- Root, or the owner of the state directory, may set it. Root writes there as that owner.
+- `watch` ignores the failures but still records them. A stored maintenance that cannot be read
+  must not be taken for "off".
 - `MAINTENANCE_REMINDER` comes in Phase 3, with notifications.
 
 ### 2.3 `xinit setup [--undo] [--dry-run]`

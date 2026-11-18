@@ -48,7 +48,7 @@ xinit_config_define() {
   local key="$1"
   # XINIT_<these> are xinit's own environment variables, not configuration values.
   case "$key" in
-    CONF_DIR | LIB_DIR | ROOT | INSTANCE | VERSION | TEST_*)
+    CONF_DIR | LIB_DIR | ROOT | INSTANCE | VERSION | SELF | ARGV | INVOKER | LOCK_FD | TEST_*)
       xinit_die "internal error: $key is reserved and cannot be a configuration key" ;;
   esac
   if [ -z "${_XINIT_CFG_KNOWN[$key]+x}" ]; then

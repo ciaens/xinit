@@ -81,3 +81,14 @@
 # below which the check warns, and fails.
 #DISK_WARN=10
 #DISK_CRIT=5
+
+# ---- Maintenance and state --------------------------------------------------------------------
+
+# How long `xinit maint on` lasts without --for. A duration is a number of seconds, or numbers
+# with a unit: s, m or min, h, d (90, 15min, 2h, 1h30m).
+#MAINT_DURATION=2h
+
+# Where xinit keeps what it has to remember, in one directory per instance.
+#STATE_DIR=/var/lib/xinit
+# Where xinit keeps its locks, in one directory per instance.
+#RUN_DIR=/run/xinit

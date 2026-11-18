@@ -109,6 +109,9 @@ Unit tests (`tests/unit/`) run xinit on the host, against the real files of each
   `psql` and `mariadb` first on `PATH`. They answer as on a healthy instance, and `FAKE_*`
   variables change one answer: see `tests/unit/helpers.bash`.
 - `tests/fixtures/journal/` holds the journal lines of real out-of-memory faults.
+- `use_state` is for the commands that need no XWiki installation. It gives xinit empty
+  configuration, state and runtime directories, a fake `logger`, and a fixed clock: xinit reads the
+  time from `XINIT_TEST_NOW` when it is set, so a test moves in time without waiting.
 
 ## Fault library
 
@@ -184,7 +187,14 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | S-OOM-04 | 1 | `xinit check oom` as a user who may not read the journal | `oom` unknown, reason `no-access`, not ok |
 | S-FMT-01 | 1 | any | `--format json` parses; `--format nagios` first line `XINIT <STATUS> - …` and exit code matches |
 
-### Acting: `40-watch.bats`
+### Maintenance: `40-maint.bats`
+| Id | Phase | Setup | Expected |
+|---|---|---|---|
+| S-MAINT-01 | 2 | `maint on --for 10m`, `status`, `off`, as root | on, then off; directories 0700 and file 0600, root's; logged in the journal; a user who may not read the state gets an error, not "off" |
+| S-MAINT-02 | 2 | the state directory belongs to another user | what root sets belongs to that user, who reads it |
+| S-MAINT-03 | 2 | `maint on --for 3s`, wait | off by itself |
+
+### Acting: `50-watch.bats`
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
 | S-PROC-02 | 2 | `xinit setup`, then killed JVM | systemd restarts it; `xinit-notify@` ran once (journal); no `xinit watch` restart |

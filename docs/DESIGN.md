@@ -138,7 +138,7 @@ and metrics of the implemented checks are in [checks.md](checks.md).
 ### 3.4 Actions and the restart policy
 
 `xinit watch` (timer, every minute by default):
-1. Takes `flock /run/xinit/<instance>.lock`. If another run holds it, it exits.
+1. Takes `flock /run/xinit/<instance>/lock`. If another run holds it, it exits.
 2. Runs the checks marked `ACT_ON` (default `http process`).
 3. Updates the failure counters in the state dir.
 4. If a check has been `crit` for `RESTART_AFTER` consecutive runs (default 3), and there is no
@@ -154,7 +154,8 @@ Container mode never restarts. `xinit check --health` exits 0 or 1 for `HEALTHCH
 the orchestrator owns restarts.
 
 **Maintenance** has an expiry: `xinit maint on [--for 2h] [--reason …]`, `off`, `status`. The
-expiry epoch is stored in the state file, so a forgotten maintenance ends by itself.
+expiry epoch is stored in the state directory, so a forgotten maintenance ends by itself. Without
+`--for` it lasts `MAINT_DURATION` (2 hours). The reference is [acting.md](acting.md).
 
 **Warm-up** (XINIT-14) is `xinit-warmup@<instance>.service`. It is ordered after the servlet unit
 and `PartOf` it. It requests `WARMUP_URLS`, one URL per subwiki, without blocking the servlet

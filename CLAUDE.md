@@ -15,10 +15,11 @@ hardening.
   - `phases/phase-N-*.md` holds each phase's tasks and acceptance criteria;
   - `TESTING.md` is the test procedure and the scenario catalogue;
   - `test-env.md` describes the test images;
-  - `checks.md` is the reference of `xinit layout` and `xinit check`.
+  - `checks.md` is the reference of `xinit layout` and `xinit check`;
+  - `acting.md` is the reference of `xinit maint`, and of the state and lock of an instance.
 
-What exists: `xinit layout` and `xinit check` (Phase 1). They only read. `watch`, `report`, `maint`
-and `setup` are not implemented yet.
+What exists: `xinit layout` and `xinit check` (Phase 1), which only read, and `xinit maint`
+(Phase 2). `watch`, `report` and `setup` are not implemented yet.
 
 Load the XWiki plugin from https://github.com/xwiki/xwiki-dev-llm (clone it, then
 `claude plugin marketplace add <clone>` and `claude plugin install xwiki@xwiki-dev-llm`). It holds
@@ -68,6 +69,10 @@ tests/fixtures/collect.sh                       # rebuild tests/fixtures/ from t
   - A configuration key `KEY` is set in the environment as `XINIT_KEY`, so no shell variable of
     xinit may have that name.
   - A function called as `$(…)` runs in a subshell: a variable it sets is lost.
+  - Root never writes in a directory that belongs to another user: a command that has to write
+    there runs again as that user (`xinit_state_become_owner`). A state file is written with
+    `xinit_state_write` and read with `xinit_state_read`, never sourced.
+  - The time comes from `xinit_now`, so that tests can set it with `XINIT_TEST_NOW`.
 - **Configuration keys**: `etc/xinit.conf.example` is their reference. A unit test fails when it
   does not list every key with its real default.
 - **Tests**: assert on xinit's machine output (`--format json`, exit codes), never on human-readable
