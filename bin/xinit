@@ -32,6 +32,8 @@ fi
 . "$XINIT_LIB_DIR/core.sh"
 # shellcheck source=../lib/xinit/config.sh
 . "$XINIT_LIB_DIR/config.sh"
+# shellcheck source=../lib/xinit/parse.sh
+. "$XINIT_LIB_DIR/parse.sh"
 
 usage() {
   cat <<USAGE
