@@ -34,6 +34,14 @@ fi
 . "$XINIT_LIB_DIR/config.sh"
 # shellcheck source=../lib/xinit/parse.sh
 . "$XINIT_LIB_DIR/parse.sh"
+# shellcheck source=../lib/xinit/layout.sh
+. "$XINIT_LIB_DIR/layout.sh"
+# shellcheck source=../lib/xinit/profiles/debian-tomcat.sh
+. "$XINIT_LIB_DIR/profiles/debian-tomcat.sh"
+# shellcheck source=../lib/xinit/profiles/debian-xjetty.sh
+. "$XINIT_LIB_DIR/profiles/debian-xjetty.sh"
+# shellcheck source=../lib/xinit/profiles/war.sh
+. "$XINIT_LIB_DIR/profiles/war.sh"
 
 usage() {
   cat <<USAGE
@@ -53,7 +61,7 @@ Commands:
   version    print the version
   help       print this help
 
-Only 'version' and 'help' are implemented yet.
+Only 'layout', 'version' and 'help' are implemented yet.
 USAGE
 }
 
@@ -97,7 +105,12 @@ main() {
   case "$cmd" in
     version | --version) echo "xinit $XINIT_VERSION" ;;
     help | --help | -h) usage ;;
-    layout | check | watch | report | maint | setup)
+    layout)
+      xinit_instance_resolve "$OPT_INSTANCE"
+      xinit_config_load
+      xinit_cmd_layout "${ARGS[@]:1}" || exit $?
+      ;;
+    check | watch | report | maint | setup)
       xinit_instance_resolve "$OPT_INSTANCE"
       xinit_config_load
       xinit_die "'$cmd' is not implemented yet" "$XINIT_EXIT_UNKNOWN" ;;

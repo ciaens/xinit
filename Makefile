@@ -7,7 +7,9 @@ VARIANT ?= tomcat10-pgsql
 BINDIR = $(DESTDIR)$(PREFIX)/bin
 # bin/xinit finds its libraries in ../lib/xinit, so the two must stay side by side.
 LIBDIR = $(DESTDIR)$(PREFIX)/lib/xinit
-LIBS = $(notdir $(wildcard lib/xinit/*.sh))
+# Paths relative to lib/xinit: core.sh, profiles/war.sh...
+LIBS = $(patsubst lib/xinit/%,%,$(wildcard lib/xinit/*.sh lib/xinit/*/*.sh))
+LIBSUBDIRS = $(sort $(filter-out ./,$(dir $(LIBS))))
 
 .PHONY: help lint test-unit test-integration test images install uninstall
 
@@ -35,10 +37,10 @@ images:
 	set -e; for v in $$(grep -v '^#' tests/env/variants); do tests/env/xwiki-env.sh build $$v; done
 
 install:
-	install -d $(BINDIR) $(LIBDIR)
+	install -d $(BINDIR) $(LIBDIR) $(addprefix $(LIBDIR)/,$(LIBSUBDIRS))
 	install -m 0755 bin/xinit $(BINDIR)/xinit
-	install -m 0644 $(addprefix lib/xinit/,$(LIBS)) $(LIBDIR)/
+	set -e; for f in $(LIBS); do install -m 0644 lib/xinit/$$f $(LIBDIR)/$$f; done
 
 uninstall:
 	rm -f $(BINDIR)/xinit $(addprefix $(LIBDIR)/,$(LIBS))
-	-rmdir $(LIBDIR)
+	-rmdir $(addprefix $(LIBDIR)/,$(LIBSUBDIRS)) $(LIBDIR)

@@ -35,8 +35,7 @@ load helpers
 }
 
 @test "cli: XINIT_LIB_DIR overrides where the libraries are read from" {
-  mkdir -p "$BATS_TEST_TMPDIR/lib"
-  cp "$XINIT_REPO"/lib/xinit/*.sh "$BATS_TEST_TMPDIR/lib/"
+  cp -r "$XINIT_REPO/lib/xinit" "$BATS_TEST_TMPDIR/lib"
   sed 's/^XINIT_VERSION=.*/XINIT_VERSION="9.9.9-test"/' "$XINIT_REPO/lib/xinit/core.sh" \
     > "$BATS_TEST_TMPDIR/lib/core.sh"
   XINIT_LIB_DIR="$BATS_TEST_TMPDIR/lib" run "$XINIT" version
