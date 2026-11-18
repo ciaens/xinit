@@ -25,7 +25,8 @@ as_nobody() {
   [ "$(json 'd["maintenance"]')" = True ]
   [ "$(json 'd["by"]')" = root ]
   [ "$(json 'd["reason"]')" = "integration test" ]
-  [ "$(in_env stat -c '%U %a' /var/lib/xinit)" = "root 700" ]
+  # The directory of all the instances is for the periodic job to enter; the instance's is private.
+  [ "$(in_env stat -c '%U %a' /var/lib/xinit)" = "root 755" ]
   [ "$(in_env stat -c '%U %a' /var/lib/xinit/default)" = "root 700" ]
   [ "$(in_env stat -c '%U %a' /var/lib/xinit/default/maintenance)" = "root 600" ]
 

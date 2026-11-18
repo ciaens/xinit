@@ -196,7 +196,7 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 ### Maintenance: `40-maint.bats`
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
-| S-MAINT-01 | 2 | `maint on --for 10m`, `status`, `off`, as root | on, then off; directories 0700 and file 0600, root's; logged in the journal; a user who may not read the state gets an error, not "off" |
+| S-MAINT-01 | 2 | `maint on --for 10m`, `status`, `off`, as root | on, then off; the instance's directory 0700 and its file 0600, root's; logged in the journal; a user who may not read the state gets an error, not "off" |
 | S-MAINT-02 | 2 | the state directory belongs to another user | what root sets belongs to that user, who reads it |
 | S-MAINT-03 | 2 | `maint on --for 3s`, wait | off by itself |
 
