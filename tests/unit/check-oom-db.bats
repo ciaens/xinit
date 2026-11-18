@@ -215,6 +215,17 @@ journal_reads() { calls journalctl | grep -v -- ' -n 0 '; }
   [[ "$(of db message)" == *"password authentication failed"* ]]
 }
 
+@test "db: a database that goes down between the test of its port and the login is refused, not a failed login" {
+  mkdir -p "$XINIT_CONF_DIR/credentials"
+  echo "*:*:*:xwiki:secret" >"$XINIT_CONF_DIR/credentials/default.pgpass"
+  FAKE_DB_LOGIN_ERROR='psql: error: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused' \
+    check db
+  [ "$status" -eq 2 ]
+  expect db crit refused
+  FAKE_DB_LOGIN_ERROR="ERROR 2002 (HY000): Can't connect to server on 'localhost' (111)" check db
+  expect db crit refused
+}
+
 @test "db: MariaDB is logged into with a defaults file, over TCP" {
   use_other_fixture tomcat11-mariadb
   mkdir -p "$XINIT_CONF_DIR/credentials"

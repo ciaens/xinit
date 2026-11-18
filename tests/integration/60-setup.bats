@@ -222,19 +222,24 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
 
 @test "S-SEC-01 nothing xinit wrote lets another user read a secret, and no password is on a command line" {
   local password seen=0
+  conf
+  xinit setup --format json
+  [ "$status" -eq 0 ]
+  wait_for 180 has_run
+  # What holds a secret, or the state, is for its owner only.
+  [ -z "$(in_env_sh "find /var/lib/xinit /run/xinit/* /etc/xinit/credentials -perm /o+rwx")" ]
+  [ "$(in_env_sh "stat -c '%U %a' /etc/xinit/credentials/default.*")" = "xinit 600" ]
+
   password="$(in_env cat "$XT_CONFIG_DIR/hibernate.cfg.xml" | python3 -c '
 import re, sys
 text = re.sub(r"<!--.*?-->", "", sys.stdin.read(), flags=re.S)
 print(re.findall(r"connection\.password\">([^<]*)<", text)[0])')"
-  [ "${#password}" -ge 8 ]
-  # In a file, for grep -f: on grep's own command line, the test would find itself.
-  printf '%s\n' "$password" | in_env_sh "umask 077 && cat > /root/xinit-test-password"
-  conf
-  xinit setup --format json
-  [ "$status" -eq 0 ]
+  [ "${#password}" -ge 8 ] ||
+    skip "the database password of this variant is too common a word to search for"
   # shellcheck disable=SC2154  # $stderr is set by bats' run
   [[ "$output$stderr" != *"$password"* ]]
-  wait_for 180 has_run
+  # In a file, for grep -f: on grep's own command line, the test would find itself.
+  printf '%s\n' "$password" | in_env_sh "umask 077 && cat > /root/xinit-test-password"
   # Run the job a few more times, looking at every command line meanwhile.
   for _ in 1 2 3; do
     in_env systemctl start --no-block xinit-watch@default.service
@@ -245,9 +250,6 @@ print(re.findall(r"connection\.password\">([^<]*)<", text)[0])')"
     done
   done
   [ "$seen" -eq 0 ]
-  # What holds a secret, or the state, is for its owner only.
-  [ -z "$(in_env_sh "find /var/lib/xinit /run/xinit/* /etc/xinit/credentials -perm /o+rwx")" ]
-  [ "$(in_env_sh "stat -c '%U %a' /etc/xinit/credentials/default.*")" = "xinit 600" ]
   # The password is in the credentials file, and nowhere else xinit wrote.
   [ -z "$(in_env_sh "grep -rlFf /root/xinit-test-password /etc/systemd/system /etc/sysusers.d /etc/xinit/setup /var/lib/xinit /run/xinit || true")" ]
   [ "$(in_env_sh "journalctl -t xinit --since @$XT_START -o cat | grep -cFf /root/xinit-test-password || true")" = 0 ]

@@ -150,6 +150,15 @@ xinit_check_db() {
       xinit_result db ok port-only \
         "$where accepts connections (the login is not checked: no client for $type is installed)"
       ;;
-    *) xinit_result db crit login-failed "$where: login as $user or query on $name failed: $XINIT_DB_ERROR" ;;
+    *)
+      # A database that stops between the test of its port and the login is down, not one that
+      # refuses this user.
+      case "$XINIT_DB_ERROR" in
+        *"Connection refused"* | *"Can't connect to"*)
+          xinit_result db crit refused "$where refuses connections: $XINIT_DB_ERROR"
+          ;;
+        *) xinit_result db crit login-failed "$where: login as $user or query on $name failed: $XINIT_DB_ERROR" ;;
+      esac
+      ;;
   esac
 }
