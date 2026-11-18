@@ -319,8 +319,8 @@ XML
   source "$XINIT_REPO/lib/xinit/core.sh"
   # shellcheck source=../../lib/xinit/config.sh
   source "$XINIT_REPO/lib/xinit/config.sh"
-  # shellcheck source=../../lib/xinit/layout.sh
-  source "$XINIT_REPO/lib/xinit/layout.sh"
+  # shellcheck source=../../lib/xinit/result.sh
+  source "$XINIT_REPO/lib/xinit/result.sh"
   local text
   for text in 'plain' 'quote " and \ backslash' $'line\nbreak\ttab\rcr' $'bell\a escape\e' \
     'a & b <c>' 'é ü 日本' ''; do

@@ -191,30 +191,6 @@ xinit_layout_explain_missing() {
   fi
 }
 
-# xinit_json_string <text>: print it as a JSON string, quotes included.
-xinit_json_string() {
-  local text="$1" out="" char i code
-  # Quoted replacements: bash 5.2 otherwise reads & in a replacement as "the matched text".
-  local bs='\\' dq='\"'
-  text="${text//\\/"$bs"}"
-  text="${text//\"/"$dq"}"
-  text="${text//$'\n'/\\n}"
-  text="${text//$'\r'/\\r}"
-  text="${text//$'\t'/\\t}"
-  if [[ "$text" == *[[:cntrl:]]* ]]; then
-    for ((i = 0; i < ${#text}; i++)); do
-      char="${text:i:1}"
-      if [[ "$char" == [[:cntrl:]] ]]; then
-        printf -v code '%d' "'$char"
-        printf -v char '\\u%04x' "$code"
-      fi
-      out+="$char"
-    done
-    text="$out"
-  fi
-  printf '"%s"' "$text"
-}
-
 # xinit_layout_print <text|json>: print the layout.
 xinit_layout_print() {
   local format="$1" key sep=""

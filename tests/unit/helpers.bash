@@ -37,8 +37,15 @@ calls() { cat "$FAKEBIN/$1.calls" 2>/dev/null || true; }
 #   - XINIT_ROOT is the copy, so tests may change its files;
 #   - systemctl and dpkg-query are fakes that replay the fixture's cmd/ outputs;
 #   - the processes of cmd/ps-unit-user.txt exist under $XINIT_ROOT/proc;
-#   - XINIT_CONF_DIR is an empty directory: no configuration.
-# FAKE_UNIT_STOPPED=1 makes the fake systemctl report every unit as stopped.
+#   - XINIT_CONF_DIR is an empty directory: no configuration;
+#   - curl, ps, df and journalctl are fakes of a healthy instance, which these variables change:
+#       FAKE_UNIT_STOPPED=1      systemctl reports every unit as stopped
+#       FAKE_UNIT_STATE=<state>  systemctl reports this ActiveState
+#       FAKE_JVM_AGE=<seconds>   ps: how long the JVM has been running (default: one day)
+#       FAKE_CURL_EXIT / _ERROR  curl fails with this exit code and message
+#       FAKE_CURL_CODE / _TIME / _REDIRECT   the answer to a page request (default: 200 in 0.25s)
+#       FAKE_REST_CODE / _BODY   the answer to a /rest/ request (default: 200 and the version)
+#       FAKE_DF_FREE / FAKE_DF_IFREE   free blocks and inodes, out of 1000000 (default: 500000)
 use_fixture() {
   local variant="$1" pid _ppid _user comm
   XINIT_ROOT="$BATS_TEST_TMPDIR/root"
@@ -83,7 +90,48 @@ use_fixture() {
         SubState) echo dead; exit 0 ;;
       esac
     fi
+    if [ -n "${FAKE_UNIT_STATE:-}" ] && [ "$property" = ActiveState ]; then
+      echo "$FAKE_UNIT_STATE"
+      exit 0
+    fi
     sed -n "s/^$property=//p" "$file"'
+
+  # ps -o etimes= -p <pid>
+  fake ps 'echo "  ${FAKE_JVM_AGE:-86400}"'
+
+  # curl: what xinit_http_get expects from the real one. The body goes to stdout unless
+  # -o /dev/null is given, errors go to stderr, and the -w line comes last.
+  fake curl '
+    url="${!#}" body=1
+    for arg in "$@"; do [ "$arg" = /dev/null ] && body=""; done
+    if [ -n "${FAKE_CURL_EXIT:-}" ]; then
+      echo "curl: ($FAKE_CURL_EXIT) ${FAKE_CURL_ERROR:-failed}" >&2
+      printf "\nXINIT-HTTP\t000\t%s\t\n" "${FAKE_CURL_TIME:-0.001000}"
+      exit "$FAKE_CURL_EXIT"
+    fi
+    case "$url" in
+      */rest/)
+        [ -n "$body" ] && printf "%s" "${FAKE_REST_BODY-{\"links\":[],\"version\":\"18.9.0\",\"syntaxes\":[]\}}"
+        printf "\nXINIT-HTTP\t%s\t0.020000\t\n" "${FAKE_REST_CODE:-200}"
+        ;;
+      *)
+        [ -n "$body" ] && printf "<html>a page</html>"
+        printf "\nXINIT-HTTP\t%s\t%s\t%s\n" "${FAKE_CURL_CODE:-200}" "${FAKE_CURL_TIME:-0.250000}" \
+          "${FAKE_CURL_REDIRECT:-}"
+        ;;
+    esac'
+
+  # df -P -k <path> / df -P -i <path>
+  fake df '
+    case " $* " in
+      *" -i "*)
+        echo "Filesystem Inodes IUsed IFree IUse% Mounted on"
+        echo "/dev/fake 1000000 x ${FAKE_DF_IFREE:-500000} x% /" ;;
+      *)
+        echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+        echo "/dev/fake 1000000 x ${FAKE_DF_FREE:-500000} x% /" ;;
+    esac'
+  mkdir -p "$XINIT_ROOT/var/lib/xwiki/data" "$XINIT_ROOT/var/lib/xwiki-war/data"
 }
 
 # conf <<EOF ... : write the configuration, $XINIT_CONF_DIR/xinit.conf.
