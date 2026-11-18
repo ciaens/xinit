@@ -148,6 +148,20 @@ cmd_pull() {
   echo "pulled $remote as xinit-test/xwiki:$1"
 }
 
+# push_retrying <image>: push it, and try again when the registry refuses. Several variants
+# pushed at the same time share their base layers, and a registry can then answer "unknown blob"
+# for a layer another push is still uploading.
+push_retrying() {
+  local image="$1" try
+  for try in 1 2 3 4; do
+    docker push -q "$image" >/dev/null && return 0
+    [ "$try" -lt 4 ] || break
+    echo "the push of $image failed (try $try of 4), trying again in $((try * 20))s" >&2
+    sleep "$((try * 20))"
+  done
+  die "could not push $image"
+}
+
 cmd_push() {
   check_variant "${1:-}"
   local repo version
@@ -157,7 +171,7 @@ cmd_push() {
   [ -n "$version" ] || die "xinit-test/xwiki:$1 has no /etc/xinit-test-env: rebuild it"
   for tag in "$1" "$1-$version"; do
     docker tag "xinit-test/xwiki:$1" "$repo:$tag"
-    docker push -q "$repo:$tag" >/dev/null
+    push_retrying "$repo:$tag"
     echo "pushed $repo:$tag"
   done
 }
