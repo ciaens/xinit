@@ -30,10 +30,16 @@ if [ -z "${XINIT_LIB_DIR:-}" ]; then
 fi
 # shellcheck source=../lib/xinit/core.sh
 . "$XINIT_LIB_DIR/core.sh"
+# shellcheck source=../lib/xinit/config.sh
+. "$XINIT_LIB_DIR/config.sh"
 
 usage() {
   cat <<USAGE
-Usage: xinit [-i <instance>] <command> [options]
+Usage: xinit [-i <instance>] [-o KEY=value]... <command> [options]
+
+Options, before or after the command:
+  -i, --instance <name>   the instance to work on, when there are several
+  -o KEY=value            override a configuration value, for this run
 
 Commands:
   layout     show how this XWiki installation was detected
@@ -49,12 +55,49 @@ Only 'version' and 'help' are implemented yet.
 USAGE
 }
 
+# The requested instance (-i), empty when not given.
+OPT_INSTANCE=""
+# The arguments left once the global options are taken out: the command and its own options.
+ARGS=()
+
+# parse_global_options <args...>: take -i and -o out, wherever they are, up to a "--".
+parse_global_options() {
+  local re_override='^[A-Za-z_][A-Za-z0-9_]*='
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -i | --instance)
+        [ $# -ge 2 ] || xinit_die "$1 needs an instance name" "$XINIT_EXIT_USAGE"
+        OPT_INSTANCE="$2"
+        shift 2
+        ;;
+      -o)
+        [ $# -ge 2 ] || xinit_die "-o needs KEY=value" "$XINIT_EXIT_USAGE"
+        [[ "$2" =~ $re_override ]] || xinit_die "-o $2: expected KEY=value" "$XINIT_EXIT_USAGE"
+        XINIT_CLI_OVERRIDES+=("$2")
+        shift 2
+        ;;
+      --)
+        shift
+        ARGS+=("$@")
+        return 0
+        ;;
+      *)
+        ARGS+=("$1")
+        shift
+        ;;
+    esac
+  done
+}
+
 main() {
-  local cmd="${1:-help}"
+  parse_global_options "$@"
+  local cmd="${ARGS[0]:-help}"
   case "$cmd" in
-    version|--version) echo "xinit $XINIT_VERSION" ;;
-    help|--help|-h) usage ;;
-    layout|check|watch|report|maint|setup)
+    version | --version) echo "xinit $XINIT_VERSION" ;;
+    help | --help | -h) usage ;;
+    layout | check | watch | report | maint | setup)
+      xinit_instance_resolve "$OPT_INSTANCE"
+      xinit_config_load
       xinit_die "'$cmd' is not implemented yet" "$XINIT_EXIT_UNKNOWN" ;;
     *)
       usage >&2

@@ -6,11 +6,17 @@ changing anything** on the host. This alone is useful: you can run it from Nagio
 
 ## Tasks
 
-### 1.1 Core (`lib/xinit/core.sh`)
-- Config parser: `KEY=value` with optional quotes, `#` comments, no command substitution or
-  expansion. Layering: built-in defaults < `xinit.conf` < `instances/<name>.conf` < `XINIT_*`
-  environment < CLI flags. Unknown keys produce a warning.
-- Instance resolution: `-i <name>`, defaulting to `default` when only one instance exists.
+### 1.1 Core (`lib/xinit/core.sh`, `lib/xinit/config.sh`)
+- Config parser (done): one `KEY=value` per line, with `#` comment lines. A value is bare, `"…"` or
+  `'…'`, and always literal: nothing is expanded, and the file is never sourced.
+  - There is no comment after a value, because `#` is legal in URLs.
+  - A malformed line is fatal (exit 3) and names its file and line.
+  - An unknown key gives a warning and is ignored.
+  - Layers: built-in defaults < `xinit.conf` < `instances/<name>.conf` < `XINIT_<KEY>` environment
+    < `-o KEY=value` on the command line. Each value keeps its source.
+  - The configuration directory is `/etc/xinit`, or `$XINIT_CONF_DIR`.
+- Instance resolution (done): `-i <name>`. Without it, the instance is the only file in
+  `instances/`, or `default` when there is none. With several files, `-i` is required.
 - Logging to stderr and the journal (`systemd-cat`/`logger` when available). There is no
   `/var/log/xinit.log` by default; it can be enabled with `LOG_FILE`.
 - Result model and renderers: `text`, `json`, `nagios`. Exit codes:
@@ -21,13 +27,15 @@ Profiles, in detection order:
 - `debian-tomcat`: `dpkg-query -W 'xwiki-tomcat*-common'` gives N, then `tomcatN.service`.
   `WEBAPP_DIR` comes from `docBase` in `/etc/tomcatN/Catalina/localhost/*.xml` and the context path
   from the file name (`xwiki.xml` → `/xwiki`, `ROOT.xml` → `/`). The port comes from
-  `/etc/tomcatN/server.xml`.
-- `debian-xjetty`: `xwiki-xjetty-common` gives `xwiki.service`. Its paths come from the unit
-  (`systemctl cat xwiki.service`) and `/etc/xwiki/xjetty-web.xml` / `jetty-web.xml`.
+  `/etc/tomcatN/server.xml`, which has commented-out `<Connector>` elements to skip.
+- `debian-xjetty`: `xwiki-xjetty-common` gives `xwiki.service`. The port is `JETTY_PORT` in the
+  unit's environment, or `-p` in its `ExecStart`, and 8080 otherwise. The context path is always
+  `/xwiki`. `xjetty-web.xml` holds neither.
 - `war`: no detection. It requires `UNIT` (or `START_CMD` + `STOP_CMD` + `PID_FILE`), `WEBAPP_DIR`,
   `BASE_URL`, and optionally `LOG_FILE`.
-- `container`: `/.dockerenv`, `container=` env or cgroup hints, *and* no systemd as PID 1.
-  Defaults to the official image paths.
+
+The `container` profile is part of [Phase 4](phase-4-containers.md), where the official image is
+there to test it against.
 
 Common fillers, used by all profiles:
 - `PERMDIR` from `xwiki.properties`.
@@ -35,6 +43,7 @@ Common fillers, used by all profiles:
   that the Debian templates use; it takes the **un-commented** `connection.url`.
 - The version from `META-INF/extension.xed`.
 - The JVM PID from `systemctl show -p MainPID`, checked to be a `java` process, else unknown.
+  `MainPID` is the JVM for Tomcat and for xjetty.
 
 `xinit layout [--format json]` prints every key with its **source**: detected, config or default.
 

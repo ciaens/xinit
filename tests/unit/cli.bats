@@ -36,6 +36,7 @@ load helpers
 
 @test "cli: XINIT_LIB_DIR overrides where the libraries are read from" {
   mkdir -p "$BATS_TEST_TMPDIR/lib"
+  cp "$XINIT_REPO"/lib/xinit/*.sh "$BATS_TEST_TMPDIR/lib/"
   sed 's/^XINIT_VERSION=.*/XINIT_VERSION="9.9.9-test"/' "$XINIT_REPO/lib/xinit/core.sh" \
     > "$BATS_TEST_TMPDIR/lib/core.sh"
   XINIT_LIB_DIR="$BATS_TEST_TMPDIR/lib" run "$XINIT" version
@@ -47,4 +48,36 @@ load helpers
   run systemctl is-active tomcat10
   [ "$output" = "fake: is-active" ]
   [ "$(calls systemctl)" = "is-active tomcat10" ]
+}
+
+@test "cli: -i and -o are accepted before and after the command" {
+  export XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc"
+  mkdir -p "$XINIT_CONF_DIR/instances"
+  touch "$XINIT_CONF_DIR/instances/wiki1.conf"
+  run "$XINIT" -i wiki1 version
+  [ "$status" -eq 0 ]
+  run "$XINIT" version --instance wiki1
+  [ "$status" -eq 0 ]
+}
+
+@test "cli: a bad -i or -o is a usage error (64)" {
+  export XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc"
+  run "$XINIT" layout -i
+  [ "$status" -eq 64 ]
+  run "$XINIT" layout -i no-such-instance
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"unknown instance no-such-instance"* ]]
+  run "$XINIT" -o NOVALUE layout
+  [ "$status" -eq 64 ]
+  run "$XINIT" -o NO_SUCH_KEY=1 layout
+  [ "$status" -eq 64 ]
+}
+
+@test "cli: a malformed configuration file stops a command with its file and line" {
+  export XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc"
+  mkdir -p "$XINIT_CONF_DIR"
+  printf '# ok\nthis is not a setting\n' >"$XINIT_CONF_DIR/xinit.conf"
+  run "$XINIT" layout
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"$XINIT_CONF_DIR/xinit.conf:2: expected KEY=value"* ]]
 }
