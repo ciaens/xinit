@@ -113,6 +113,24 @@ journal_reads() { calls journalctl | grep -v -- ' -n 0 '; }
   expect oom ok ok
 }
 
+@test "oom: the words of an out-of-memory error inside a logged message are not one" {
+  # What XWiki logs about a request can hold any text: only the JVM's own lines count.
+  printf '%s\n' \
+    '2026-11-18 10:07:26,404 [http-nio-8080-exec-1 - http://localhost:8080/xwiki/bin/view/A/java.lang.OutOfMemoryError: Java heap space] WARN  o.x.s.Thing - Not found' \
+    '  java.lang.OutOfMemoryError: Java heap space, said a page' \
+    'Reason: Exception in thread "x" java.lang.OutOfMemoryError: Java heap space' >"$BATS_TEST_TMPDIR/journal"
+  FAKE_JOURNAL_UNIT="$BATS_TEST_TMPDIR/journal" check oom
+  [ "$status" -eq 0 ]
+  expect oom ok ok
+  [ "$(of oom metrics.heap_errors)" = 0 ]
+  # The cause at the end of a stack trace is the JVM's.
+  printf '%s\n' 'java.lang.RuntimeException: Failed' '        at org.xwiki.Thing.run(Thing.java:1)' \
+    'Caused by: java.lang.OutOfMemoryError: Metaspace' >"$BATS_TEST_TMPDIR/journal"
+  FAKE_JOURNAL_UNIT="$BATS_TEST_TMPDIR/journal" check oom
+  expect oom crit heap
+  [[ "$(of oom message)" == *"Metaspace"* ]]
+}
+
 @test "oom: a heap error and a kernel kill together are crit, with both counted" {
   FAKE_JOURNAL_UNIT="$FIXTURES/journal/heap-oom-unit.txt" FAKE_JOURNAL_SYSTEM="$(kernel_oom_journal)" \
     check oom

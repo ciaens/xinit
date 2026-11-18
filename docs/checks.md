@@ -139,7 +139,7 @@ The journal of the unit, over the last `OOM_WINDOW` seconds.
 | Status | Reason | When |
 |---|---|---|
 | ok | `ok` | nothing found |
-| crit | `heap` | `java.lang.OutOfMemoryError` since the JVM started. That JVM is unreliable until it is restarted. |
+| crit | `heap` | `java.lang.OutOfMemoryError` since the JVM started, in a line the JVM wrote itself or as the cause in a stack trace: at the start of the line. The words inside a message XWiki logged do not count. That JVM is unreliable until it is restarted. |
 | warn | `kernel` | the kernel's OOM killer killed a process of the unit's control group. systemd has usually restarted XWiki by then: the memory settings need attention, a restart does not help. |
 | unknown | `no-access` | the user may not read the journal (group `systemd-journal`) |
 | unknown | `no-journal`, `bad-config` | `LOG_SOURCE` is not the journal; `OOM_WINDOW` is not a number |

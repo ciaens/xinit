@@ -55,6 +55,7 @@ _xinit_journal() {
 xinit_check_oom() {
   local source="${XINIT_LAYOUT[LOG_SOURCE]-}" window unit
   local age heap_window log heap=0 kind="" kernel=0 by_systemd=0 cgroup pattern minutes metrics
+  local re_heap='^((Exception in thread "[^"]*" )+|Caused by: )?java\.lang\.OutOfMemoryError(:|$)'
   if [[ "$source" != journal:* ]]; then
     xinit_result oom unknown no-journal \
       "only the systemd journal can be searched, and LOG_SOURCE is '${source:-not known}'"
@@ -82,11 +83,13 @@ xinit_check_oom() {
   fi
   log="$XINIT_JOURNAL_OUTPUT"
   # Pipes, not here-strings: bash may write those to a temporary file, and xinit writes nowhere.
-  heap="$(printf '%s\n' "$log" | grep -c 'java\.lang\.OutOfMemoryError')" || heap=0
+  # Only the lines the JVM writes itself, or the cause in a stack trace: at the start of a line.
+  # A message XWiki logs starts with its date, whatever text a request put in it.
+  heap="$(printf '%s\n' "$log" | grep -cE "$re_heap")" || heap=0
   if [ "$heap" -gt 0 ]; then
     # What ran out: "Java heap space", "Metaspace", "unable to create native thread"...
-    kind="$(printf '%s\n' "$log" | grep -o 'java\.lang\.OutOfMemoryError: [A-Za-z ]*' |
-      head -n 1)" || kind=""
+    kind="$(printf '%s\n' "$log" | grep -E "$re_heap" |
+      grep -o 'java\.lang\.OutOfMemoryError: [A-Za-z ]*' | head -n 1)" || kind=""
     kind="${kind#java.lang.OutOfMemoryError: }"
   fi
 
