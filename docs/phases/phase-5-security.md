@@ -169,6 +169,18 @@ After `apt install --only-upgrade` of the XWiki packages in the test image, the 
 still starts, and `xinit check config` reports no drift. For route 1, it reports the drift when
 the test simulates a changed start script.
 
+## Carried over from Phase 2
+
+Phase 2 confines xinit's own units, and left this for the hardening of the unit of XWiki:
+- `ReadWritePaths=` for the data directories of Java agents named in `JVM_OPTS_APPEND`.
+- `xinit setup` warns when xinit is installed where another user than root can change it. With
+  the Debian package (Phase 6) it is in a directory of root: the warning can then become a refusal.
+- The periodic job gets the group of the installation's files it cannot read otherwise. Under a
+  hardened unit of XWiki, check that this group gives it nothing to write: its own unit has a
+  read-only file system, which the tests of this phase should prove.
+- `LoadCredential=` would keep the database password from the `xinit` user outside its service.
+  It does not work in the Docker test containers: to try again on a virtual machine.
+
 ## Acceptance
 - For each variant, `baseline` passes §4.2 and its §4.3 expectations. `strict` passes both on
   Tomcat 10/11 and xjetty.

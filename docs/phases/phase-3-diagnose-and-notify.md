@@ -3,6 +3,27 @@
 Goal: when something goes wrong, the admin receives everything needed to understand it, sent the
 moment it happens, through the channel they use.
 
+## Carried over from Phase 2
+
+What Phase 2 built, that this phase has to use ([../acting.md](../acting.md)):
+- `xinit_notify <event> <message>` (`lib/xinit/notify.sh`) is the one place a notification leaves
+  from. It writes a line in the system log. The events: `restart` and `flapping`, from
+  `xinit watch`, and `crash`, from `xinit notify crash`, which the unit of XWiki starts when it
+  stops unexpectedly. Mail and webhooks go there.
+- `xinit watch` stores one thread dump before a restart, in the state directory, and keeps the
+  last five. The report takes over from there (three dumps, the summaries).
+- A job that is not root asks root for a thread dump with a request file. `jcmd`, when there is
+  a JDK, has to run as the user of the JVM: that needs a third request, or `xinit report` run by
+  root.
+- The state of the job holds the result of each check of the last run (`RESULTS`), the count of
+  failed runs and the times of the restarts: what a status command or a metrics file needs.
+- A maintenance stores who set it and why. `MAINTENANCE_REMINDER` is still to do.
+- The crash notification says what systemd said ("Failed with result 'signal'"). The report of a
+  crash cannot take a thread dump: the JVM is gone.
+- The oom check counts the lines the JVM writes itself. A JVM started with
+  `-XX:+ExitOnOutOfMemoryError` turns a heap error into a crash, which systemd repairs and
+  notifies at once: worth proposing through `JVM_OPTS_APPEND`.
+
 ## Tasks
 
 ### 3.1 `xinit report [--send] [--output FILE]`
