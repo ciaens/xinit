@@ -13,8 +13,8 @@
 # Non-obvious facts this relies on:
 # - The xwiki-*-{pgsql,mysql,mariadb} packages create the database from their maintainer scripts
 #   (dbconfig-common), so the database server must be running while the package is configured.
-# - On a fresh wiki every request, REST included, is redirected to the Distribution Wizard unless
-#   distribution.automaticStartOnMainWiki=false.
+# - On a fresh wiki every page request is redirected to the Distribution Wizard unless
+#   distribution.automaticStartOnMainWiki=false. REST requests are not.
 # - The flavor's pages name XWiki.Admin as their author: without that user their scripts do not
 #   render ("the execution of the [velocity] script macro is not allowed").
 set -euo pipefail
