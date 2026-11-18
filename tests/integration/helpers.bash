@@ -6,8 +6,10 @@
 #   XT_CONTAINER   container name
 #   XT_VARIANT     image variant (tomcat10-pgsql, xjetty-mariadb...)
 
-# For run --separate-stderr.
-bats_require_minimum_version 1.5.0
+# For run --separate-stderr. One test sources this file from a plain bash, without bats.
+if declare -F bats_require_minimum_version >/dev/null; then
+  bats_require_minimum_version 1.5.0
+fi
 
 : "${XT_CONTAINER:?XT_CONTAINER is not set - run the tests through tests/run.sh}"
 : "${XT_VARIANT:?XT_VARIANT is not set - run the tests through tests/run.sh}"
