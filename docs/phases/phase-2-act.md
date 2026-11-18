@@ -122,11 +122,34 @@ small stub HTTP service in the same container. It proves that the state, the loc
 of one instance leave the other alone, without a second real XWiki and its image variant.
 
 ## Acceptance (integration scenarios, see TESTING.md)
-- Killing the JVM with `kill -9`: systemd restarts it, and `xinit-notify@` fires once.
-- A hung JVM (`kill -STOP`): after `RESTART_AFTER` runs, one thread dump is stored, one restart
-  happens, and cooldown is respected.
-- Maintenance on: there is no restart. Maintenance with an expiry: it ends by itself.
-- A permanently broken wiki (for example a wrong DB password): there are at most `MAX_RESTARTS`
-  restarts, then a flapping escalation.
-- `setup --undo` leaves `systemctl cat <UNIT>` identical to the state before `setup`.
-- The watch service runs as `xinit`, and no file written by xinit is world-readable.
+- Killing the JVM with `kill -9`: systemd restarts it, and the crash is notified once. **Met**
+  (S-PROC-02).
+- A hung JVM (`kill -STOP`): after `RESTART_AFTER` runs, one restart happens, and cooldown is
+  respected. **Met** (S-WATCH-01, S-WATCH-02). A frozen JVM gives no thread dump: the one of a
+  JVM that still runs is stored before its restart (S-WATCH-08).
+- Maintenance on: there is no restart. Maintenance with an expiry: it ends by itself. **Met**
+  (S-WATCH-03, S-WATCH-04, S-MAINT-03).
+- A permanently broken wiki: there are at most `MAX_RESTARTS` restarts, then a flapping
+  escalation. **Met** (S-WATCH-05), with a page that always fails rather than a wrong database
+  password, which takes a restart of XWiki to put in place and another to heal.
+- `setup --undo` leaves `systemctl cat <UNIT>` identical to the state before `setup`. **Met**
+  (S-SETUP-01).
+- The watch service runs as `xinit`, and no file written by xinit lets another user read a
+  secret. **Met** (S-SETUP-03, S-SEC-01).
+
+Verified on the five local variants (cgroup v1): `tomcat10-pgsql`, `tomcat11-mariadb`,
+`xjetty-pgsql`, `war-tomcat10-pgsql` and `tomcat10-mariadb-lts-debian12` (systemd 252). Each one
+ran the whole integration suite, 60 tests, of which 3 or 4 are skipped for another kind of
+installation. What failed, and what was done:
+- S-MAINT-01, on the first two variants: the test expected a mode that a fix had just changed. It
+  was corrected and rerun on both.
+- S-DB-01, on the WAR variant: the database stopped between the test of its port and the login,
+  and the db check called that a failed login. The check was fixed, and the scenario rerun there.
+- S-SEC-01, on the WAR variant: its database password is a common word, which cannot be searched
+  for. There the scenario checks the permissions only.
+
+An independent review of the code of this phase gave 14 findings, on robustness and on what a
+compromised `xinit` user could do: all are fixed, each with a test.
+
+Still to verify, once the workflows are on the default branch: `tomcat10-mysql-ubuntu2404`, and
+cgroup v2.
