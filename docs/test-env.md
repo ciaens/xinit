@@ -10,7 +10,7 @@ This way xinit is tested against the real units, paths and drop-ins.
 ## Images and variants
 
 The images are named `xinit-test/xwiki:<variant>`. A variant is written
-`<base>[-lts][-debian12|-ubuntu2404]`:
+`<base>[-lts][-debian12|-ubuntu2604]`:
 
 | Part | Meaning |
 |---|---|
@@ -20,7 +20,7 @@ There is no Tomcat 9 variant. `xwiki-tomcat9-*` stopped at XWiki 16.10, when XWi
 EE, and no supported distribution ships `tomcat9` any more (Debian 12 only has `tomcat10`).
 | `war-tomcat10-pgsql`, `war-tomcat11-mariadb` | the XWiki WAR exploded in `/var/lib/tomcatN/webapps/xwiki`, with Debian's `tomcatN` package, the JDBC driver from the distribution, and the permanent directory `/var/lib/xwiki-war/data`, following the WAR installation guide |
 | `-lts` | XWiki from the LTS repository instead of stable |
-| `-debian12`, `-ubuntu2404` | the distribution; Debian 13 by default |
+| `-debian12`, `-ubuntu2604` | the distribution; Debian 13 by default |
 
 `tests/env/variants` lists the variants CI builds, publishes and tests:
 
@@ -29,7 +29,7 @@ EE, and no supported distribution ships `tomcat9` any more (Debian 12 only has `
 | `tomcat10-pgsql`, `tomcat11-mariadb`, `xjetty-pgsql` | stable | the three Debian package families |
 | `war-tomcat10-pgsql` | stable | the `war` profile |
 | `tomcat10-mariadb-lts-debian12` | LTS | XWiki 18 needs Java 21, which Debian 12 does not ship |
-| `tomcat10-mysql-ubuntu2404` | stable | `xwiki-*-mysql` depends on Oracle's `mysql-server`: Ubuntu has it, Debian does not |
+| `tomcat10-mysql-ubuntu2604` | stable | `xwiki-*-mysql` depends on Oracle's `mysql-server`: Ubuntu has it, Debian does not |
 
 Each image is already provisioned, so the Distribution Wizard never shows. It has:
 

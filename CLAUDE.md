@@ -131,6 +131,9 @@ These are verified on XWiki 18.9.0 / 17.10 with the Debian packages. The details
   while an integration run is in progress.
 - Behind the session's HTTPS proxy, export `XINIT_TEST_CA=/root/.ccr/ca-bundle.crt` before
   building or starting test images.
-- Docker Hub can rate-limit (429). Retry later; GitHub's runners are not affected.
+- Docker Hub can rate-limit (429). Retry later, or take a base image from a mirror with
+  `BASE_IMAGE=mirror.gcr.io/library/<image>`; GitHub's runners are not affected.
+- This machine has cgroup v1. systemd 258 and later need cgroup v2: the Ubuntu 26.04 variant
+  (systemd 259) does not boot here, and is built and tested by the workflows only.
 - Bash reads a running script as it executes it. Never edit `tests/env/*.sh` while a build runs from
   them: run long builds from a copy.

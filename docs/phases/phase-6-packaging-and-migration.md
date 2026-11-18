@@ -40,6 +40,6 @@ Goal: existing 1.3 users can upgrade, new users install with one command, and 2.
 ## Acceptance
 - On a host with xinit 1.3.3 installed by its `install.sh`: migrate, then `setup`, gives a working
   2.0 with the same monitoring behaviour, and nothing of 1.3 left active.
-- `apt install ./xinit_2.0.0_all.deb && xinit setup` works on Debian 12, Debian 13 and Ubuntu 24.04
+- `apt install ./xinit_2.0.0_all.deb && xinit setup` works on Debian 12, Debian 13 and Ubuntu 26.04
   test images.
 - The `war` profile passes the Phase 1 to 3 integration scenarios on Rocky 9.

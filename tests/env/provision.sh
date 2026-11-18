@@ -24,7 +24,7 @@ log() { echo "[provision] $*"; }
 
 VARIANT="${1:-}"
 # The distribution suffix only chose the base image (xwiki-env.sh); -lts picks the repository.
-V="$(sed -E 's/-(debian12|debian13|ubuntu2404)$//' <<<"$VARIANT")"
+V="$(sed -E 's/-(debian12|debian13|ubuntu2404|ubuntu2604)$//' <<<"$VARIANT")"
 CHANNEL=stable
 if [[ "$V" == *-lts ]]; then CHANNEL=lts V="${V%-lts}"; fi
 if [[ "$V" =~ ^(tomcat[0-9]+|xjetty)-(pgsql|mysql|mariadb)$ ]]; then

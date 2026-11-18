@@ -16,7 +16,7 @@
 # <variant>  the package name without "xwiki-": tomcat10-pgsql, tomcat11-mariadb, xjetty-pgsql...
 #            or war-tomcat<N>-<db> for the WAR in Debian's tomcat<N> package: war-tomcat10-pgsql.
 #            Optional suffixes, in this order: -lts takes XWiki from the LTS repository instead of
-#            stable; -debian12 / -ubuntu2404 pick the distribution (default Debian 13).
+#            stable; -debian12 / -ubuntu2604 pick the distribution (default Debian 13).
 #            For a package variant, the newest version of that package is installed, with every
 #            xwiki-* dependency at the same version: tomcat9-* gives XWiki 16.10, the last version
 #            packaged for Tomcat 9.
@@ -43,7 +43,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 usage() { awk 'NR>1 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "$0"; exit "${1:-1}"; }
 
 check_variant() {
-  [[ "${1:-}" =~ ^((tomcat[0-9]+|xjetty)-(pgsql|mysql|mariadb)|war-tomcat[0-9]+-(pgsql|mariadb))(-lts)?(-(debian12|debian13|ubuntu2404))?$ ]] \
+  [[ "${1:-}" =~ ^((tomcat[0-9]+|xjetty)-(pgsql|mysql|mariadb)|war-tomcat[0-9]+-(pgsql|mariadb))(-lts)?(-(debian12|debian13|ubuntu2404|ubuntu2604))?$ ]] \
     || die "'${1:-}' is not a variant like tomcat10-pgsql, xjetty-mariadb, war-tomcat10-pgsql or tomcat10-mariadb-lts-debian12"
 }
 
@@ -53,6 +53,7 @@ base_image() {
   case "$1" in
     *-debian12) echo debian:12 ;;
     *-ubuntu2404) echo ubuntu:24.04 ;;
+    *-ubuntu2604) echo ubuntu:26.04 ;;
     *) echo debian:13 ;;
   esac
 }

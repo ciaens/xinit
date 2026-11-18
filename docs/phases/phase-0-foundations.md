@@ -18,7 +18,7 @@ Jira: XINIT-18 (test environment), XINIT-19 (CI).
   `war-tomcat10-pgsql` (XWiki 18.9.0), and `tomcat10-mariadb-lts-debian12` (17.10.14).
   The integration suite (baseline + faults, 17 tests) passes on all five.
 - Verified on GitHub's cgroup v2 runners (Test images workflow, run 1): all six variants build and
-  pass the baseline tests, `tomcat10-mysql-ubuntu2404` included.
+  pass the baseline tests, `tomcat10-mysql-ubuntu2604` included.
 - Facts found while building them, which the profiles of Phase 1 must also know:
   - XWiki 18 needs Java 21. Debian 12 only has 17, so it runs the LTS.
   - `xwiki-*-mysql` depends on Oracle's `mysql-server`, which Debian lacks (it has MariaDB).

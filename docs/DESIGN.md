@@ -269,7 +269,7 @@ JVM agents and their `ReadWritePaths`, the `ss` port helper, wrapping long mail 
 ## 6. Decisions
 
 Settled with the project lead:
-1. **Supported distributions:** Debian 12 and 13 and Ubuntu 24.04, tested in CI. On Debian 12, only
+1. **Supported distributions:** Debian 12 and 13 and Ubuntu 26.04, tested in CI. On Debian 12, only
    the LTS: XWiki 18 needs Java 21. **Tomcat 9 is not supported**: XWiki stopped packaging for it
    at 16.10, and none of these distributions ships it. Older instances keep running xinit 1.3 until
    they are upgraded, so 2.0 needs no compatibility with them. The RHEL 9 family is supported

@@ -151,5 +151,5 @@ installation. What failed, and what was done:
 An independent review of the code of this phase gave 14 findings, on robustness and on what a
 compromised `xinit` user could do: all are fixed, each with a test.
 
-Still to verify, once the workflows are on the default branch: `tomcat10-mysql-ubuntu2404`, and
+Still to verify, once the workflows are on the default branch: `tomcat10-mysql-ubuntu2604`, and
 cgroup v2.
