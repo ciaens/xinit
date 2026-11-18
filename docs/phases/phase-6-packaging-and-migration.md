@@ -29,7 +29,7 @@ Goal: existing 1.3 users can upgrade, new users install with one command, and 2.
 - Other distributions:
   - a RHEL 9 family image (Rocky/Alma) with a tarball Tomcat and the WAR, tested as the `war`
     profile;
-  - check SELinux contexts for the state dir and the polkit rule.
+  - check SELinux contexts for the state dir and the request directory of the path unit.
 - `LimitNOFILE=` is set in the drop-in and checked (XINIT-6).
 - Documentation:
   - `README.md` rewritten;

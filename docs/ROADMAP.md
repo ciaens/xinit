@@ -7,7 +7,7 @@ and tested, and each phase has its own document with tasks and acceptance criter
 |---|---|---|---|
 | [0](phases/phase-0-foundations.md) (done) | Foundations | test environment, CI (shellcheck + bats), new tree skeleton, test procedure | XINIT-18, 19 |
 | [1](phases/phase-1-detect-and-check.md) | Detection + read-only checks | `xinit layout`, `xinit check` on Debian Tomcat 10/11, xjetty and declared WAR; text/JSON/Nagios output | XINIT-10, 11, 16, 17, 20, 24 |
-| [2](phases/phase-2-act.md) | Acting safely | `xinit watch` + restart policy, maintenance, systemd timer and drop-in, `OnFailure` notification, warm-up, non-root via polkit | XINIT-2, 14, 15, 21, 22 |
+| [2](phases/phase-2-act.md) | Acting safely | `xinit watch` + restart policy, maintenance, systemd timer and drop-in, `OnFailure` notification, warm-up, non-root via a systemd path unit | XINIT-2, 14, 15, 21, 22 |
 | [3](phases/phase-3-diagnose-and-notify.md) | Diagnostics + notifications | `xinit report` bundle (jcmd, journal, DB activity, OOM), mail + webhook, Prometheus textfile | XINIT-4, 5, 7, 23, 27, 31 |
 | [4](phases/phase-4-containers.md) | Containers | in-container health check, sidecar image, compose/k8s examples, tested against the official `xwiki` image | XINIT-26 |
 | [5](phases/phase-5-security.md) | Service hardening | tested systemd hardening levels for the XWiki unit (`xinit setup --harden`), exposure score, functional + attack test suites, direct `java` start | XINIT-30, XWIKI-25659 |
@@ -49,7 +49,7 @@ Existing open issues and where they land:
 | XINIT-11 without MySQL | 1 | DB checks are optional per type |
 | XINIT-13 .deb package | 6 | |
 | XINIT-14 multiple first requests | 2 | warm-up unit |
-| XINIT-15 non-root | 2 | `xinit` user + polkit |
+| XINIT-15 non-root | 2 | `xinit` user + a systemd path unit for the two privileged actions |
 | XINIT-16 Jetty | 1 | `debian-xjetty` profile |
 | XINIT-17 multiple installation types | 1 | profiles |
 

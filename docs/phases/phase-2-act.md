@@ -26,12 +26,17 @@ What Phase 1 built or found, that this phase has to use:
 ### 2.1 `xinit watch`
 - `flock` on `/run/xinit/<instance>.lock`. State lives in `/var/lib/xinit/<instance>/state`
   (failure counters, last restart times, maintenance expiry).
-- Restart policy, configured by `ACT_ON`, `RESTART_AFTER`, `COOLDOWN`, `MAX_RESTARTS`,
-  `MAX_RESTARTS_WINDOW`. The algorithm is in DESIGN §3.4.
-- Before a restart, capture the minimal diagnostics: a thread dump through `jcmd`, since it must be
-  taken before the JVM is gone. The full report is in Phase 3; this phase stores the dump in the
-  state dir.
-- Restart through `systemctl restart <UNIT>`, or `RESTART_CMD` for a WAR install without systemd.
+- Restart policy. The algorithm is in DESIGN §3.4. Defaults, decided:
+  - `ACT_ON`: `process` crit, `http` crit, and `oom` crit `heap`;
+  - `RESTART_AFTER=3` consecutive failed runs, with one run per minute;
+  - `COOLDOWN=15min` after a restart;
+  - `MAX_RESTARTS=3` per hour (`MAX_RESTARTS_WINDOW`), then it stops acting and escalates.
+- Before a restart, store a thread dump in the state dir, since it must be taken before the JVM
+  is gone. The Debian packages ship a JRE, without `jcmd`: the dump is `kill -3`, read back from
+  the journal. The full report is in Phase 3.
+- Restart through the path unit (2.3), or `RESTART_CMD` for an installation whose unit xinit does
+  not manage.
+- `--dry-run` shows what it would do.
 - Notification hook: a stub that logs to the journal. Mail and webhook come in Phase 3.
 
 ### 2.2 Maintenance
@@ -55,8 +60,12 @@ It generates the following files and prints a diff before writing them:
   - the service runs `User=xinit`, `StateDirectory=xinit`, `RuntimeDirectory=xinit`,
     `ProtectSystem=strict`, `LoadCredential=`;
   - the timer is `OnUnitActiveSec=1min`;
-- the polkit rule (`/etc/polkit-1/rules.d/50-xinit.rules`): user `xinit` may `restart` only the
-  listed units (XINIT-15);
+- `xinit-act@<instance>.path` and `.service` (XINIT-15): how the `xinit` user restarts XWiki
+  without root, polkit or sudo.
+  - `watch` writes a request file in `/run/xinit/<instance>/`.
+  - The path unit sees it and starts the service, as root.
+  - The service does one of two fixed things, named by the request: restart `<UNIT>`, or send
+    `kill -3` to its JVM. It takes nothing else from the request.
 - credentials: `db.cnf` / `.pgpass` derived from `hibernate.cfg.xml`, mode 0600, owned by `xinit`;
 - `xinit-warmup@<instance>.service` (XINIT-14): `After=<UNIT>`, `PartOf=<UNIT>`,
   `WantedBy=<UNIT>`. It retries `WARMUP_URLS` until 200 or `WARMUP_TIMEOUT`.
@@ -64,16 +73,13 @@ It generates the following files and prints a diff before writing them:
 `--undo` removes exactly what `setup` wrote (tracked in a manifest in the state dir), then runs
 `daemon-reload`.
 
-The `jcmd` thread dump must run as the JVM's user: `runuser -u <jvm user> -- jcmd`, granted by a
-narrow sudoers or polkit rule, or by running that one step as root. Choose one and document why.
-
-### 2.4 Cron fallback
-`/etc/cron.d/xinit` runs `xinit watch` every minute, for hosts without systemd. It uses the same
-locking and state.
+### 2.4 Cron fallback (dropped)
+Every supported distribution has systemd, and a container never restarts itself (Phase 4).
 
 ### 2.5 Multi-instance (XINIT-2)
-Each template unit is instantiated per instance. Two XWiki instances on one host are tested with
-two Tomcat instances, or with Tomcat + xjetty on different ports, in one image variant.
+Each template unit is instantiated per instance. The test uses a second instance whose "wiki" is a
+small stub HTTP service in the same container. It proves that the state, the lock and the restart
+of one instance leave the other alone, without a second real XWiki and its image variant.
 
 ## Acceptance (integration scenarios, see TESTING.md)
 - Killing the JVM with `kill -9`: systemd restarts it, and `xinit-notify@` fires once.

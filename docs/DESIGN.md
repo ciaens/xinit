@@ -27,8 +27,10 @@ Non-goals:
 1. **Use the platform, don't re-implement it.**
    - Process supervision belongs to systemd (`Restart=on-failure`, `OnFailure=`).
    - Logs come from journald, or from the declared log file.
-   - Scheduling uses systemd timers, with cron only as a fallback.
-   - Restricted restart rights use polkit.
+   - Scheduling uses systemd timers. There is no cron fallback: every supported distribution
+     has systemd.
+   - Restricted restart rights use a systemd path unit, which every systemd has. polkit and sudo
+     would be added dependencies.
    - Secrets use systemd credentials or 0600 files.
    - Thread dumps use `jcmd` when it is there. The XWiki Debian packages only pull in a JRE, which
      has no `jcmd`; then xinit uses `kill -3` and reads the dump from the journal or the declared
@@ -188,12 +190,13 @@ carry the summary only.
 - `xinit-watch@<instance>.timer` / `.service`: a `Type=oneshot` service that runs as the `xinit`
   user with hardening (`ProtectSystem=strict`, `StateDirectory=xinit`, `LoadCredential=` for
   secrets).
-- A polkit rule letting the `xinit` user `restart` only `<UNIT>`, so that xinit runs without root
+- `xinit-act@<instance>.path` / `.service`: the `xinit` user asks for an action by writing a
+  request file in `/run/xinit/`. The path unit then starts a root service that can do two fixed
+  things only: restart `<UNIT>`, and take a thread dump of its JVM. So xinit runs without root
   (XINIT-15).
 - `xinit-warmup@<instance>.service`.
 
-Without systemd (containers, some WAR installs), it installs a cron file (`/etc/cron.d/xinit`)
-instead. Its locking and state are the same.
+Containers have no systemd: there xinit only checks, and the orchestrator restarts (Phase 4).
 
 ### 3.7 Configuration
 
@@ -228,7 +231,7 @@ bin/xinit
 lib/xinit/{core,layout,actions,report}.sh  lib/xinit/{profiles,checks,notify}/*.sh
 share/xinit/sql/{sanity-pg,sanity-my}.sql
 systemd/{xinit-watch@.service,xinit-watch@.timer,xinit-notify@.service,xinit-warmup@.service}
-etc/xinit.conf.example  polkit/50-xinit.rules.in  cron/xinit
+etc/xinit.conf.example
 container/Dockerfile.sidecar  container/examples/{compose.yaml,k8s.yaml}
 tests/unit/*.bats  tests/integration/*.bats  tests/env/   tests/fixtures/
 docs/

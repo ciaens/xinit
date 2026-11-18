@@ -197,7 +197,7 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | S-WATCH-07 | 2 | healthy for N runs | counters reset, nothing restarted |
 | S-SETUP-01 | 2 | `setup` then `setup --undo` | `systemctl cat <unit>` identical to before; no file left from the manifest |
 | S-SETUP-02 | 2 | `setup` with `JVM_OPTS_APPEND` | the JVM command line has both the package options and the added ones |
-| S-SETUP-03 | 2 | watch timer | runs as user `xinit`; restart allowed by polkit for `<unit>` only (restarting another unit is refused) |
+| S-SETUP-03 | 2 | watch timer | runs as user `xinit`; a restart goes through the path unit, for `<unit>` only (the `xinit` user cannot restart another unit, nor run `systemctl restart` itself) |
 | S-WARMUP-01 | 2 | `WARMUP_URLS` with two URLs | both requested after each start (access log) |
 | S-SEC-01 | 2 | after any scenario | no xinit file world-readable; no password in `/proc/*/cmdline` captured during runs |
 
@@ -228,5 +228,5 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
 | S-INST-01 | 6 | `make install DESTDIR=…` | exact file list; no write outside DESTDIR |
-| S-INST-02 | 6 | `.deb` install, then purge | user, units, polkit rule created, then removed; `/etc/xinit` kept on remove, removed on purge |
+| S-INST-02 | 6 | `.deb` install, then purge | user and units created, then removed; `/etc/xinit` kept on remove, removed on purge |
 | S-MIG-01 | 6 | 1.3.3 installed with its `install.sh` | `config migrate` + `setup --migrate`: same monitoring settings, 1.3 init script and cron disabled |
