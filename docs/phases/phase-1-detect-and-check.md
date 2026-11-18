@@ -97,8 +97,16 @@ OpenOffice server (XINIT-28) and the MySQL spam detection (XINIT-29).
 ## Acceptance
 - `xinit layout` is correct with **zero configuration** on `tomcat10/11-*` and `xjetty-*`, and
   with three lines of configuration on the WAR variant. **Met**, on the five local variants.
-- `xinit check --format nagios` can be used directly as a Nagios/Icinga plugin. Verified on
-  `tomcat10-pgsql`; the run on the other variants is in progress.
-- No command in this phase writes anything: the integration tests run `xinit layout` and
-  `xinit check` with every file system read-only. Verified on `tomcat10-pgsql`; the run on the
-  other variants is in progress.
+- `xinit check --format nagios` can be used directly as a Nagios/Icinga plugin. **Met.**
+- No command in this phase writes anything. **Met**: the integration tests run `xinit layout` and
+  `xinit check` with every file system read-only.
+
+Verified on the five local variants (cgroup v1): `tomcat10-pgsql`, `tomcat11-mariadb`,
+`xjetty-pgsql`, `war-tomcat10-pgsql` and `tomcat10-mariadb-lts-debian12`. Each one ran the whole
+integration suite: 41 tests, of which 3 or 4 are skipped because they are for another kind of
+installation, or are S-HTTP-04. Every xinit scenario passed. Two tests of the fault library failed
+for reasons in the tests themselves; they were fixed, and rerun with the scenarios that use them.
+
+Still to verify, once the workflows are on the default branch: `tomcat10-mysql-ubuntu2404`, and
+cgroup v2. On cgroup v2, systemd reports an out-of-memory kill itself, and the oom check reads
+that message: its unit test uses a hand-written line, not a capture.
