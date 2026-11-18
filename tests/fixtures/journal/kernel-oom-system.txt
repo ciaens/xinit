@@ -1,0 +1,9 @@
+http-nio-8080-e invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=0
+Memory cgroup stats for /docker/08d00f1b8bde85e3f202b2aeb6e46402d882b5d1d4ebd5cf0d2ed0651375ff81/system.slice/tomcat10.service:
+oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=08d00f1b8bde85e3f202b2aeb6e46402d882b5d1d4ebd5cf0d2ed0651375ff81,mems_allowed=0,oom_memcg=/docker/08d00f1b8bde85e3f202b2aeb6e46402d882b5d1d4ebd5cf0d2ed0651375ff81/system.slice/tomcat10.service,task_memcg=/docker/08d00f1b8bde85e3f202b2aeb6e46402d882b5d1d4ebd5cf0d2ed0651375ff81/system.slice/tomcat10.service,task=java,pid=24268,uid=996
+Memory cgroup out of memory: Killed process 24268 (java) total-vm:8108556kB, anon-rss:1221944kB, file-rss:47488kB, shmem-rss:0kB, UID:996 pgtables:3056kB oom_score_adj:0
+tomcat10.service: Main process exited, code=killed, status=9/KILL
+tomcat10.service: Failed with result 'signal'.
+tomcat10.service: Scheduled restart job, restart counter is at 1.
+Starting tomcat10.service - Apache Tomcat 10 Web Application Server...
+Started tomcat10.service - Apache Tomcat 10 Web Application Server.

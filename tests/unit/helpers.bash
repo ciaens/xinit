@@ -46,6 +46,11 @@ calls() { cat "$FAKEBIN/$1.calls" 2>/dev/null || true; }
 #       FAKE_CURL_CODE / _TIME / _REDIRECT   the answer to a page request (default: 200 in 0.25s)
 #       FAKE_REST_CODE / _BODY   the answer to a /rest/ request (default: 200 and the version)
 #       FAKE_DF_FREE / FAKE_DF_IFREE   free blocks and inodes, out of 1000000 (default: 500000)
+#       FAKE_JOURNAL_UNIT=<file>     journalctl -u: the unit's messages (default: none)
+#       FAKE_JOURNAL_SYSTEM=<file>   journalctl: the kernel's and systemd's messages
+#       FAKE_JOURNAL_DENIED=1        journalctl answers as to a user who may not read the journal
+#       FAKE_DB_TCP=refused|timeout|dns   the database port does not accept connections
+#       FAKE_DB_LOGIN_ERROR=<message>     psql and mariadb fail with this message
 use_fixture() {
   local variant="$1" pid _ppid _user comm
   XINIT_ROOT="$BATS_TEST_TMPDIR/root"
@@ -132,6 +137,41 @@ use_fixture() {
         echo "/dev/fake 1000000 x ${FAKE_DF_FREE:-500000} x% /" ;;
     esac'
   mkdir -p "$XINIT_ROOT/var/lib/xwiki/data" "$XINIT_ROOT/var/lib/xwiki-war/data"
+
+  # journalctl --no-pager -o cat -u <unit> --since ... | ... --since ... _TRANSPORT=kernel + _PID=1
+  fake journalctl '
+    if [ -n "${FAKE_JOURNAL_DENIED:-}" ]; then
+      echo "No journal files were opened due to insufficient permissions."
+      exit 0
+    fi
+    case " $* " in
+      *" -u "*) [ -z "${FAKE_JOURNAL_UNIT:-}" ] || cat "$FAKE_JOURNAL_UNIT" ;;
+      *" _TRANSPORT=kernel "*) [ -z "${FAKE_JOURNAL_SYSTEM:-}" ] || cat "$FAKE_JOURNAL_SYSTEM" ;;
+    esac'
+
+  # timeout <seconds> bash -c <open a TCP connection> _ <host> <port>: the database port probe.
+  fake timeout '
+    case "${FAKE_DB_TCP:-}" in
+      refused) echo "bash: connect: Connection refused" >&2; exit 1 ;;
+      dns) echo "bash: line 1: db.invalid: Name or service not known" >&2; exit 1 ;;
+      timeout) exit 124 ;;
+    esac'
+
+  # The database clients: they answer 1 to SELECT 1, and record where the password came from.
+  fake psql '
+    echo "PGPASSFILE=${PGPASSFILE:-}" >>"$FAKEBIN/psql.env"
+    if [ -n "${FAKE_DB_LOGIN_ERROR:-}" ]; then echo "$FAKE_DB_LOGIN_ERROR" >&2; exit 2; fi
+    echo 1'
+  fake mariadb '
+    if [ -n "${FAKE_DB_LOGIN_ERROR:-}" ]; then echo "$FAKE_DB_LOGIN_ERROR" >&2; exit 1; fi
+    echo 1'
+}
+
+# use_other_fixture <variant>: start again from another fixture, in the same test.
+use_other_fixture() {
+  rm -rf "$XINIT_ROOT" "$XINIT_CONF_DIR"
+  rm -f "$FAKEBIN"/*.calls "$FAKEBIN"/*.env
+  use_fixture "$1"
 }
 
 # conf <<EOF ... : write the configuration, $XINIT_CONF_DIR/xinit.conf.

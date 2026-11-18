@@ -52,6 +52,10 @@ fi
 . "$XINIT_LIB_DIR/checks/http.sh"
 # shellcheck source=../lib/xinit/checks/rest.sh
 . "$XINIT_LIB_DIR/checks/rest.sh"
+# shellcheck source=../lib/xinit/checks/oom.sh
+. "$XINIT_LIB_DIR/checks/oom.sh"
+# shellcheck source=../lib/xinit/checks/db.sh
+. "$XINIT_LIB_DIR/checks/db.sh"
 # shellcheck source=../lib/xinit/checks/disk.sh
 . "$XINIT_LIB_DIR/checks/disk.sh"
 

@@ -176,9 +176,9 @@ _xinit_results_nagios() {
       value="${metric#*=}"
       unit=""
       case "$name" in
-        *_seconds) name="${name%_seconds}" unit=s ;;
-        *_percent) name="${name%_percent}" unit=% ;;
-        *_bytes) name="${name%_bytes}" unit=B ;;
+        *_seconds) unit=s ;;
+        *_percent) unit=% ;;
+        *_bytes) unit=B ;;
       esac
       perfdata+="${perfdata:+ }${XINIT_RESULT_CHECK[$i]}_$name=$value$unit"
     done

@@ -24,7 +24,7 @@ xinit_check_rest() {
   local base="${XINIT_LAYOUT[BASE_URL]-}" url version installed="${XINIT_LAYOUT[VERSION]-}" metrics
   local re_version='"version"[[:space:]]*:[[:space:]]*"([^"]+)"'
   if [ -z "$base" ]; then
-    xinit_result rest unknown no-url "BASE_URL is not known"
+    xinit_result rest unknown no-url "BASE_URL is not known: see 'xinit layout'"
     return 0
   fi
   url="$base/rest/"

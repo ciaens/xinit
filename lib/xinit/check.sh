@@ -24,7 +24,7 @@
 # configuration, changes nothing on the system, and records its findings with xinit_result.
 
 # The checks, in the order they run.
-XINIT_CHECKS=(process http rest disk)
+XINIT_CHECKS=(process http rest oom db disk)
 
 # The checks to run, when none is named on the command line.
 xinit_config_define CHECKS "${XINIT_CHECKS[*]}"
@@ -86,7 +86,9 @@ xinit_cmd_check() {
   esac
   if [ "${#names[@]}" -eq 0 ]; then
     # CHECKS is a list separated by spaces or commas.
-    read -r -a names <<<"${XINIT_CFG[CHECKS]//,/ }"
+    for name in ${XINIT_CFG[CHECKS]//,/ }; do
+      names+=("$name")
+    done
   fi
   for name in "${names[@]}"; do
     found=1

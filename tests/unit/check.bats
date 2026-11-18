@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # `xinit check`: the result model, the output formats, and the process, http, rest and disk
-# checks, against stubbed curl, systemctl, ps and df.
+# checks, against stubbed curl, systemctl, ps and df. The oom and db checks are in check-oom-db.bats.
 
 load helpers
 
@@ -32,7 +32,7 @@ expect() {
   [ -z "$stderr" ]
   [ "$(json "d['status']")" = ok ]
   [ "$(json "d['instance']")" = default ]
-  [ "$(json "' '.join(r['check'] for r in d['results'])")" = "process http rest disk" ]
+  [ "$(json "' '.join(r['check'] for r in d['results'])")" = "process http rest oom db disk" ]
   [ "$(json "' '.join(sorted(set(r['status'] for r in d['results'])))")" = ok ]
 }
 
@@ -77,15 +77,17 @@ expect() {
 @test "S-FMT-01 check: the nagios format has the status line, performance data and exit code" {
   run "$XINIT" check --format nagios
   [ "$status" -eq 0 ]
-  [[ "${lines[0]}" =~ ^XINIT\ OK\ -\ 4\ checks\ passed\ \|\  ]]
+  [[ "${lines[0]}" =~ ^XINIT\ OK\ -\ 6\ checks\ passed\ \|\  ]]
   # label=value[unit] pairs after the |
   local perfdata="${lines[0]#*| }" item
   for item in $perfdata; do
     [[ "$item" =~ ^[a-z_]+=[0-9.]+(s|%|B)?$ ]] || { echo "bad perfdata: $item"; false; }
   done
-  [[ " $perfdata " == *" http_time=0.250000s "* ]]
-  [[ " $perfdata " == *" disk_free=50% "* ]]
-  [ "${#lines[@]}" -eq 5 ]
+  [[ " $perfdata " == *" http_time_seconds=0.250000s "* ]]
+  [[ " $perfdata " == *" disk_free_percent=50% "* ]]
+  # Every label is there once.
+  [ -z "$(tr ' ' '\n' <<<"$perfdata" | cut -d= -f1 | sort | uniq -d)" ]
+  [ "${#lines[@]}" -eq 7 ]
 
   FAKE_UNIT_STOPPED=1 FAKE_CURL_EXIT=7 run "$XINIT" check --format nagios
   [ "$status" -eq 2 ]
@@ -104,8 +106,8 @@ expect() {
 @test "check: the text format has one line per check and the overall status" {
   run "$XINIT" check
   [ "$status" -eq 0 ]
-  [ "${#lines[@]}" -eq 5 ]
-  [ "${lines[4]}" = "overall: ok" ]
+  [ "${#lines[@]}" -eq 7 ]
+  [ "${lines[6]}" = "overall: ok" ]
 }
 
 # ---- process

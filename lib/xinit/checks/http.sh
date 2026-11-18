@@ -57,15 +57,20 @@ xinit_http_get() {
   [ -r "$netrc" ] && args+=(--netrc-file "$netrc")
   [ "${XINIT_CFG[HTTP_INSECURE]}" = yes ] && args+=(--insecure)
   output="$(curl "${args[@]}" "$@" -- "$url" 2>&1)" || XINIT_HTTP_EXIT=$?
+  # No here-string: bash may write those to a temporary file, and xinit writes nowhere.
   while IFS= read -r line; do
     case "$line" in
       XINIT-HTTP$'\t'*)
-        IFS=$'\t' read -r _ XINIT_HTTP_CODE XINIT_HTTP_TIME XINIT_HTTP_REDIRECT <<<"$line"
+        line="${line#*$'\t'}"
+        XINIT_HTTP_CODE="${line%%$'\t'*}"
+        line="${line#*$'\t'}"
+        XINIT_HTTP_TIME="${line%%$'\t'*}"
+        XINIT_HTTP_REDIRECT="${line#*$'\t'}"
         ;;
       "curl: ("*) XINIT_HTTP_ERROR="${line#curl: (*) }" ;;
       *) XINIT_HTTP_BODY+="$line"$'\n' ;;
     esac
-  done <<<"$output"
+  done < <(printf '%s\n' "$output")
   return 0
 }
 
@@ -120,7 +125,7 @@ xinit_http_failure() {
 xinit_check_http() {
   local base="${XINIT_LAYOUT[BASE_URL]-}" url code expected=1 time_ms slow_ms metrics
   if [ -z "$base" ]; then
-    xinit_result http unknown no-url "BASE_URL is not known"
+    xinit_result http unknown no-url "BASE_URL is not known: see 'xinit layout'"
     return 0
   fi
   url="$base${XINIT_CFG[HTTP_PATH]}"
