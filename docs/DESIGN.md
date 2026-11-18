@@ -122,14 +122,16 @@ The XWiki version comes from `WEB-INF/../META-INF/extension.xed`, or from the RE
 | `http` | `BASE_URL` (or `CHECK_URLS`): code ∈ expected, total time < threshold; detects the Distribution Wizard redirect and the "XWiki is initializing" page | on |
 | `rest` | `/rest/` answers and reports the expected version | on |
 | `jvm` | via `jcmd`: heap usage after GC, GC time ratio, thread count, deadlocks | on if `jcmd` and the PID are reachable |
-| `oom` | heap OOM in recent logs (time-bounded); kernel OOM-kill of *this* JVM (`journalctl -k --since`) | on |
-| `db` | connect + trivial query with credentials from a 0600 file; connection count vs the pool limit | on if a client is installed |
-| `disk` | free space on the permanent dir, the DB data dir and the log dir | on |
+| `oom` | heap OOM in the journal since the JVM started (crit); kernel OOM-kill of a process of the unit (warn), both time-bounded | on |
+| `db` | the database port accepts connections; with credentials from a 0600 file and a client, login + trivial query. Later: connection count vs the pool limit | on |
+| `disk` | free space and inodes on the permanent dir. Later: the DB data dir and the log dir | on |
 | `solr` | embedded Solr core sizes / remote Solr ping | later |
 | `config` | the 1.3 `check-install` checks rewritten: permissions of the files holding secrets, encoding, short URLs coherence, superadmin enabled (warn), `xwiki.cfg` secrets left at default | on demand (`xinit check --deep`) |
 
-A check function receives the layout. It returns one or more result lines
-(`id|status|message|metric=value...`) and never exits the process.
+A check function reads the layout. It records a result (check, status, reason, message, metrics)
+and never exits the process. The `reason` is a short word for programs, such as `refused` or
+`timeout`: the restart policy and the tests rely on it, not on the message. The statuses, reasons
+and metrics of the implemented checks are in [checks.md](checks.md).
 
 ### 3.4 Actions and the restart policy
 
@@ -201,6 +203,11 @@ instead. Its locking and state are the same.
 /etc/xinit/credentials/<name>.*     # 0600: db.cnf / .pgpass / http.netrc — or systemd credentials
 ```
 
+- A value is taken literally: nothing in it is expanded. A malformed line stops xinit with the
+  file and line.
+- Layers: defaults < `xinit.conf` < `instances/<name>.conf` < `XINIT_<KEY>` environment variables
+  < `-o KEY=value`. `etc/xinit.conf.example` documents every key, and a unit test keeps it in sync
+  with the code.
 - Unknown keys are reported as warnings, so typos are caught.
 - `xinit config check` validates the configuration.
 - `xinit config migrate /etc/xinit/xinit.cfg` translates 1.3 keys: `CHECK_HTTP_URL`→`BASE_URL`,

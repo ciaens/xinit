@@ -17,12 +17,14 @@ changing anything** on the host. This alone is useful: you can run it from Nagio
   - The configuration directory is `/etc/xinit`, or `$XINIT_CONF_DIR`.
 - Instance resolution (done): `-i <name>`. Without it, the instance is the only file in
   `instances/`, or `default` when there is none. With several files, `-i` is required.
-- Logging to stderr and the journal (`systemd-cat`/`logger` when available). There is no
-  `/var/log/xinit.log` by default; it can be enabled with `LOG_FILE`.
-- Result model and renderers: `text`, `json`, `nagios`. Exit codes:
-  0 ok, 1 warn, 2 crit, 3 unknown (Nagios convention).
+- Logging (done): to stderr. A run started by systemd has its stderr in the journal. Logging
+  what xinit does to the journal comes with `xinit watch` (Phase 2), which is the first command
+  to do anything.
+- Result model and renderers (done): `text`, `json`, `nagios`. A result has a status, a `reason`
+  for programs, a message for people, and metrics. Exit codes: 0 ok, 1 warn, 2 crit, 3 unknown
+  (Nagios convention). The overall status is the worst one, in the order crit, warn, unknown, ok.
 
-### 1.2 Layout and profiles
+### 1.2 Layout and profiles (done)
 Profiles, in detection order:
 - `debian-tomcat`: `dpkg-query -W 'xwiki-tomcat*-common'` gives N, then `tomcatN.service`.
   `WEBAPP_DIR` comes from `docBase` in `/etc/tomcatN/Catalina/localhost/*.xml` and the context path
@@ -47,32 +49,56 @@ Common fillers, used by all profiles:
 
 `xinit layout [--format json]` prints every key with its **source**: detected, config or default.
 
-### 1.3 Checks (read-only)
-`process`, `http`, `rest`, `oom` (logs only, time-bounded), `db`, `disk`.
+### 1.3 Checks (read-only, done)
+`process`, `http`, `rest`, `oom`, `db`, `disk`. The statuses, reasons and metrics of each one are
+in [../checks.md](../checks.md).
 
 - `http`:
-  - Uses a curl argv array. Basic auth comes from a netrc file (`--netrc-file`). It never uses
-    `--location-trusted`. TLS verification is on unless `HTTP_INSECURE=yes`.
+  - Uses a curl argv array. Credentials come from a netrc file (`--netrc-file`). Redirects are not
+    followed. TLS verification is on unless `HTTP_INSECURE=yes`.
   - Results: code ∈ `HTTP_EXPECT`, total time vs `HTTP_SLOW` (warn) and `HTTP_TIMEOUT` (crit).
-  - A redirect to `/bin/distribution/` gives warn "Distribution Wizard pending".
-  - The initialization page (verify which code and marker XWiki 18 uses while starting) gives
-    warn "initializing", not crit. That way a starting wiki is not restarted.
+  - A redirect to `/bin/distribution/` gives warn `wizard`. A fresh XWiki 18.9.0 answers
+    `302` with `Location: …/bin/distribution/XWiki/Distribution?xredirect=…` to every page
+    request. It does not redirect REST requests.
+  - A starting wiki is not a failure, so that it is not restarted (Phase 2). A restarted XWiki
+    18.9.0 first refuses connections, then accepts them without answering while Tomcat deploys
+    the webapp, then answers `202` with the page "XWiki is initializing (N%)", then `200`.
+    - `202` gives warn `initializing`.
+    - Refused connections and timeouts give warn `starting` while the JVM is younger than
+      `STARTUP_GRACE` (300 s), and crit after.
   - DNS failure (curl exit 6) gives `unknown`, not crit (XINIT-5).
-- `db`: PostgreSQL and MySQL/MariaDB through `psql`/`mariadb`/`mysql`, with credentials from a 0600
-  `db.cnf`/`.pgpass` that `xinit setup` can create from `hibernate.cfg.xml` (Phase 2). Without a
-  client or credentials the result is `unknown`, not an error (XINIT-11).
-- `disk`: free % and free bytes, with thresholds.
+- `rest`: `/rest/` answers as the REST API. A running version that differs from the installed one
+  gives warn `restart-pending`.
+- `oom`:
+  - `java.lang.OutOfMemoryError` in the unit's journal since the JVM started is crit `heap`.
+  - A kill by the kernel's OOM killer is warn `kernel`, and not crit: systemd has usually
+    restarted XWiki by then, and a restart does not fix the memory settings. It is recognised
+    by the unit's control group in the kernel's message, or by systemd's own message.
+  - Both look back `OOM_WINDOW` seconds at most (1 hour).
+- `db`: PostgreSQL, MySQL and MariaDB (XINIT-10).
+  - It first opens a connection to the database's port. This needs no client and no password
+    (XINIT-11), and tells a database that is down.
+  - With a 0600 credentials file (`.pgpass` / `my.cnf`) and `psql` / `mariadb` / `mysql`, it also
+    logs in and runs `SELECT 1`. `xinit setup` will create that file from `hibernate.cfg.xml`
+    (Phase 2).
+- `disk`: free space and free inodes of the permanent directory's file system, in percent, with
+  the thresholds `DISK_WARN` and `DISK_CRIT`.
 
-### 1.4 Tests
-- Unit tests (bats): parser, renderers, each profile's `detect`/`fill` against fixtures (real config
-  files copied from the packages), and each check against stubbed `curl`/`systemctl`/`psql`.
-- Integration tests: for each image variant, `layout` matches the expected keys, and `check` is all
-  `ok` on a healthy instance. Each scenario from [../TESTING.md](../TESTING.md) marked Phase 1 gives
-  the expected status.
+Not ported from 1.3, by decision: the JVM memory options (XINIT-24: xinit no longer sets any), the
+OpenOffice server (XINIT-28) and the MySQL spam detection (XINIT-29).
+
+### 1.4 Tests (done)
+- Unit tests (bats): the parser, the renderers, each profile against the fixtures (real files
+  copied from the images), and each check against stubbed `curl`/`systemctl`/`journalctl`/`df`
+  and database clients.
+- Integration tests: `20-layout.bats` and `30-check.bats` hold the scenarios of
+  [../TESTING.md](../TESTING.md) marked Phase 1. They run on each image variant.
 
 ## Acceptance
 - `xinit layout` is correct with **zero configuration** on `tomcat10/11-*` and `xjetty-*`, and
-  with three lines of configuration on the WAR variant.
-- `xinit check --format nagios` can be used directly as a Nagios/Icinga plugin.
-- No command in this phase writes outside `/var/lib/xinit` or `/run/xinit` (checked in the
-  integration tests by comparing a file list before and after).
+  with three lines of configuration on the WAR variant. **Met**, on the five local variants.
+- `xinit check --format nagios` can be used directly as a Nagios/Icinga plugin. Verified on
+  `tomcat10-pgsql`; the run on the other variants is in progress.
+- No command in this phase writes anything: the integration tests run `xinit layout` and
+  `xinit check` with every file system read-only. Verified on `tomcat10-pgsql`; the run on the
+  other variants is in progress.

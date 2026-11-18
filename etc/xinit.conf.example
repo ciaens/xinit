@@ -1,0 +1,83 @@
+# xinit configuration: /etc/xinit/xinit.conf
+#
+# One KEY=value per line. A value is taken as written: nothing is expanded, and a # after a value
+# is part of it. Quote a value with "..." or '...' to keep spaces at its ends.
+#
+# This file applies to every instance. /etc/xinit/instances/<name>.conf holds what differs for one
+# instance; select it with `xinit -i <name>`. Any key can also be set for one run with
+# `xinit -o KEY=value`, or in the environment as XINIT_<KEY>.
+#
+# With XWiki installed from the Debian packages, nothing has to be set: run `xinit layout` to see
+# what was detected. Each line below shows a key with its default value.
+
+# ---- Where XWiki is ---------------------------------------------------------------------------
+# For a WAR deployed by hand, set UNIT, WEBAPP_DIR and BASE_URL. The rest is read from the files
+# under WEBAPP_DIR.
+
+# The kind of installation: debian-tomcat, debian-xjetty or war. Detected.
+#PROFILE=
+# The systemd unit that runs XWiki. Detected for the Debian packages.
+#UNIT=
+# The directory of the XWiki web application, which holds WEB-INF.
+#WEBAPP_DIR=
+# The directory of xwiki.properties and hibernate.cfg.xml. Default: WEBAPP_DIR/WEB-INF, or
+# /etc/xwiki for the Debian packages.
+#CONFIG_DIR=
+# XWiki's permanent directory. Default: environment.permanentDirectory in xwiki.properties.
+#PERMDIR=
+# The URL of XWiki as seen from this host, without a trailing /. Detected for the Debian packages
+# from the servlet container's configuration, for example http://localhost:8080/xwiki
+#BASE_URL=
+# Where XWiki logs. Default: journal:<UNIT>. Only the systemd journal is supported.
+#LOG_SOURCE=
+# A file holding the PID of the JVM, when the unit's main process is not the JVM itself.
+#PID_FILE=
+
+# The database. Default: read from hibernate.cfg.xml. Set these if xinit may not read that file.
+# DB_TYPE is postgresql, mysql, mariadb, oracle, hsqldb...
+#DB_TYPE=
+#DB_HOST=
+#DB_PORT=
+#DB_NAME=
+#DB_USER=
+
+# ---- Checks -----------------------------------------------------------------------------------
+
+# The checks `xinit check` runs, separated by spaces or commas.
+#CHECKS=process http rest oom db disk
+
+# Seconds after its start during which a JVM that refuses connections, or does not answer, is
+# "starting" (a warning) and not a failure.
+#STARTUP_GRACE=300
+
+# http: the page to request, after BASE_URL.
+#HTTP_PATH=/bin/view/Main/
+# http: the status codes that mean XWiki works, separated by spaces or commas.
+#HTTP_EXPECT=200
+# http: seconds after which an answer is slow (a warning).
+#HTTP_SLOW=10
+# http: seconds after which a request is given up (a failure).
+#HTTP_TIMEOUT=30
+# http: yes to accept any TLS certificate, for an https BASE_URL with a self-signed certificate.
+#HTTP_INSECURE=no
+# http: a netrc file with the login and password to send, for a wiki that guests cannot view.
+# Default: /etc/xinit/credentials/<instance>.netrc, when it exists. Keep it readable by the user
+# running xinit only (chmod 600). Its content: machine <host of BASE_URL> login <user> password <password>
+#HTTP_NETRC=
+
+# oom: how far back to look in the journal for out-of-memory errors, in seconds.
+#OOM_WINDOW=3600
+
+# db: seconds to wait for the database.
+#DB_TIMEOUT=10
+# db: the file with the database password, to check that a login and a query work. Without it,
+# only the database port is checked. Default, in /etc/xinit/credentials/:
+#   <instance>.pgpass   PostgreSQL, in the format of ~/.pgpass:  host:port:database:user:password
+#   <instance>.my.cnf   MySQL and MariaDB:  a [client] line, then a password=<password> line
+# Keep it readable by the user running xinit only (chmod 600).
+#DB_CREDENTIALS=
+
+# disk: percentages of free space and free inodes on the file system of the permanent directory,
+# below which the check warns, and fails.
+#DISK_WARN=10
+#DISK_CRIT=5

@@ -85,7 +85,7 @@ instead.
 - File naming:
   - `00-env.bats` is the baseline;
   - `10-faults.bats` tests the fault library;
-  - `<NN>-<area>.bats` holds xinit scenarios (`20-layout`, `30-check-http`, `40-watch`…).
+  - `<NN>-<area>.bats` holds xinit scenarios (`20-layout`, `30-check`, `40-watch`…).
 - Each xinit scenario test starts with its scenario id from the catalogue below, for example
   `@test "S-HTTP-03 slow answer is warn, not crit"`, so that `--filter S-HTTP` selects an area.
 - A scenario whose phase is not implemented yet calls `skip "Phase N"` as its first line. It is
@@ -93,12 +93,22 @@ instead.
 - Every fault has a heal. `teardown` calls `heal_all`, so that a failing test doesn't break the
   next one.
 - Assert on **xinit's machine output** (`--format json`, its exit code, files in its state dir),
-  never on human-readable text.
+  never on human-readable text. For a check result, assert its `status` and its `reason`.
 - Integration helpers are in `tests/integration/helpers.bash`:
   - `in_env`, `in_env_sh`: run in the container;
   - `http_code`, `wait_http`, `wait_healthy`: query XWiki from inside the container;
   - `jvm_pid`: the unit's MainPID when it is a java process;
+  - `xinit_conf [lines]`: write xinit's configuration in the container; `xinit <args>`: run xinit
+    there; `json <expression>`: read its JSON output;
   - the `fault_*` and `heal_*` functions below.
+
+Unit tests (`tests/unit/`) run xinit on the host, against the real files of each test image:
+- `use_fixture <variant>` points xinit at a copy of `tests/fixtures/<variant>/` (`XINIT_ROOT`),
+  with an empty configuration directory (`XINIT_CONF_DIR`).
+- It also puts fakes of `systemctl`, `dpkg-query`, `ps`, `curl`, `df`, `journalctl`, `timeout`,
+  `psql` and `mariadb` first on `PATH`. They answer as on a healthy instance, and `FAKE_*`
+  variables change one answer: see `tests/unit/helpers.bash`.
+- `tests/fixtures/journal/` holds the journal lines of real out-of-memory faults.
 
 ## Fault library
 
@@ -154,23 +164,24 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 ### Read-only checks: `30-check.bats`
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
-| S-CHECK-00 | 1 | healthy instance | every check `ok`, exit 0; no file changed outside `/var/lib/xinit`, `/run/xinit` (compared with a file list) |
+| S-CHECK-00 | 1 | healthy instance | every check `ok`, exit 0; the same when run with every file system read-only (`systemd-run -p ProtectSystem=strict`), so nothing is written |
 | S-PROC-01 | 1 | stopped unit | `process` crit |
 | S-PROC-03 | 1 | frozen JVM | `process` ok (still running), `http` crit |
 | S-HTTP-01 | 1 | stopped unit | `http` crit, connection refused in the message |
 | S-HTTP-02 | 1 | `BASE_URL` → fault page `status&code=503` | `http` crit, code 503 |
 | S-HTTP-03 | 1 | fault page `sleep` > `HTTP_SLOW` and < `HTTP_TIMEOUT` | `http` warn, duration in the metrics |
-| S-HTTP-04 | 1 | the Distribution Wizard redirect (set `distribution.automaticStartOnMainWiki=true` on a wiki without a flavor; a dedicated fresh-install variant may be needed) | `http` warn "Distribution Wizard pending" |
-| S-HTTP-05 | 1 | right after a restart | `http` warn "initializing", not crit |
-| S-HTTP-06 | 1 | `BASE_URL` host does not resolve | `http` unknown (DNS), not crit |
+| S-HTTP-04 | 1 | the Distribution Wizard redirect. A provisioned image never shows it, so this is a unit test, with the `Location` a fresh XWiki 18.9.0 really answers | `http` warn, reason `wizard` |
+| S-HTTP-05 | 1 | right after a restart, polled until XWiki answers | `http` is warn (`starting`, then `initializing`), then ok; never crit |
+| S-HTTP-06 | 1 | `BASE_URL` host does not resolve | `http` unknown, reason `dns`, not crit |
 | S-HTTP-07 | 1 | basic auth through a netrc file | ok; the password is not in `ps` output during the check |
 | S-REST-01 | 1 | healthy | `rest` ok, version = the package version |
 | S-DB-01 | 1 | DB down | `db` crit |
-| S-DB-02 | 1 | no DB client installed / no credentials | `db` unknown, others unaffected |
+| S-DB-02 | 1 | no credentials file; then one; then one with a wrong password | `db` ok `port-only` (the port alone is checked); ok `ok`; crit `login-failed` |
 | S-DISK-01 | 1 | `DISK_WARN` above the current usage | `disk` warn |
-| S-OOM-01 | 1 | heap OOM fault | `oom` crit "heap" |
+| S-OOM-01 | 1 | heap OOM fault | `oom` crit, reason `heap` |
 | S-OOM-02 | 1 | heap OOM fault, then restart | `oom` ok (OOM older than the last start) |
-| S-OOM-03 | 1 | kernel OOM fault | `oom` crit "kernel" |
+| S-OOM-03 | 1 | kernel OOM fault | `oom` warn, reason `kernel`: systemd has already restarted XWiki, and a restart does not fix the memory settings |
+| S-OOM-04 | 1 | `xinit check oom` as a user who may not read the journal | `oom` unknown, reason `no-access`, not ok |
 | S-FMT-01 | 1 | any | `--format json` parses; `--format nagios` first line `XINIT <STATUS> - …` and exit code matches |
 
 ### Acting: `40-watch.bats`

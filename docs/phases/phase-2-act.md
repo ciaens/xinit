@@ -3,6 +3,24 @@
 Goal: xinit fixes a broken or hung XWiki on a host with systemd, without restart loops and without
 needing root for the periodic job.
 
+## Carried over from Phase 1
+
+What Phase 1 built or found, that this phase has to use:
+- A check result has a `reason` ([../checks.md](../checks.md)). The restart policy decides on the
+  status **and** the reason. Results that must never cause a restart:
+  - any `unknown`, and any `warn` (`starting`, `initializing`, `wizard`, `slow`, `kernel`);
+  - `db` failures: restarting XWiki does not repair its database.
+- The `xinit` user needs, to see what root sees:
+  - the group `systemd-journal`, for the oom check;
+  - read access to the servlet container's configuration (`server.xml` is 0640 `root:tomcat`),
+    or `BASE_URL` in the configuration.
+- `xinit setup` creates the credentials file of the db check (`DB_CREDENTIALS`) from
+  `hibernate.cfg.xml`, 0600 and owned by the `xinit` user.
+- `xinit watch` is the first command that changes something: it logs what it does to the journal
+  (`systemd-cat` or `logger`), not only to stderr.
+- `STARTUP_GRACE` already keeps a starting JVM from being a failure. The restart policy's own
+  cooldown comes on top.
+
 ## Tasks
 
 ### 2.1 `xinit watch`
