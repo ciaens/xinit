@@ -124,7 +124,7 @@ Each fault is verified by `10-faults.bats`, with no xinit involved.
 | DB down | `systemctl stop postgresql\|mariadb` | XWiki answers errors | `systemctl start` |
 | DB auth | wrong password in `hibernate.cfg.xml` + restart | XWiki never becomes healthy | restore the file + restart |
 | deadlock | fault page `?action=deadlock` | `Found one Java-level deadlock` in a thread dump | restart |
-| heap OOM | drop-in `JDK_JAVA_OPTIONS=-Xmx768m` + fault page `?action=hog&mb=100` ×8 | `java.lang.OutOfMemoryError` in the journal | remove the drop-in + restart |
+| heap OOM | drop-in `JDK_JAVA_OPTIONS=-Xmx768m` + `provoke_heap_oom` (fault page `?action=hog`, repeated until the error is logged) | `java.lang.OutOfMemoryError` in the journal. The fault page fills the heap in a thread of its own: in the request's thread, the Groovy macro would catch the error and only show it in the page | remove the drop-in + restart |
 | kernel OOM | drop-in `MemoryMax=1200M` + `JDK_JAVA_OPTIONS=-Xmx4g` + hog | the kernel's `oom-kill` message in the journal, then the JVM is restarted. systemd did not report the unit's result as `oom-kill` on the cgroup v1 host where this was verified | remove the drop-in + restart |
 
 Two facts the faults (and xinit) depend on:

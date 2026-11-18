@@ -80,9 +80,7 @@ teardown() {
   fault_small_heap 768m
   wait_healthy 300
   install_fault_page
-  for _ in 1 2 3 4 5 6 7 8; do http_code "$(fault_url 'action=hog&mb=100')" >/dev/null; done
-  run in_env_sh "journalctl -u $XT_UNIT --since '-10min' --no-pager | grep -c 'java.lang.OutOfMemoryError'"
-  [ "$output" -ge 1 ]
+  provoke_heap_oom
 }
 
 @test "fault: cgroup memory limit gets the JVM killed by the kernel OOM killer" {

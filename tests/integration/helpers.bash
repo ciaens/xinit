@@ -107,7 +107,13 @@ if (action == 'sleep') {
 } else if (action == 'hog') {
   def hog = System.properties.get('xinit.hog') ?: []
   System.properties.put('xinit.hog', hog)
-  ((request.getParameter('mb') ?: '100') as int).times { hog << new byte[1024 * 1024] }
+  def mb = (request.getParameter('mb') ?: '100') as int
+  // In a thread of its own: an OutOfMemoryError in this request's thread would be caught by the
+  // Groovy macro and only shown in the page. Uncaught in a thread, the JVM logs it.
+  def t = new Thread({ mb.times { hog << new byte[1024 * 1024] } } as Runnable, 'xinit-hog')
+  t.daemon = true
+  t.start()
+  t.join()
   println "hog: ${hog.size()} MB"
 } else if (action == 'release') {
   System.properties.remove('xinit.hog')
@@ -164,6 +170,23 @@ fault_small_heap() {
 heal_small_heap() {
   in_env_sh "rm -f /etc/systemd/system/$XT_UNIT.d/90-xinit-test-heap.conf &&
     systemctl daemon-reload && systemctl restart $XT_UNIT"
+}
+
+# provoke_heap_oom [timeout]: fill the heap through the fault page, until the running JVM has
+# logged a java.lang.OutOfMemoryError.
+provoke_heap_oom() {
+  local end=$((SECONDS + ${1:-180})) count
+  for _ in 1 2 3 4 5 6 7 8; do http_code "$(fault_url 'action=hog&mb=100')" >/dev/null; done
+  while ((SECONDS < end)); do
+    count="$(in_env_sh "journalctl -u $XT_UNIT --no-pager -o cat \
+      --since \"\$(systemctl show -p ActiveEnterTimestamp --value $XT_UNIT)\" |
+      grep -c 'java.lang.OutOfMemoryError'")" || true
+    [ "${count:-0}" -ge 1 ] && return 0
+    XT_HTTP_TIMEOUT=20 http_code "$(fault_url 'action=hog&mb=20')" >/dev/null
+    sleep 2
+  done
+  echo "provoke_heap_oom: no java.lang.OutOfMemoryError in the journal of $XT_UNIT" >&2
+  return 1
 }
 
 # A cgroup memory limit below the heap size: the kernel OOM killer kills the JVM before Java

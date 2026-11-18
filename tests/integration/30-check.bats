@@ -237,7 +237,7 @@ print(re.findall(r"connection\.password\">([^<]*)<", text)[0])')"
   fault_small_heap 768m
   wait_healthy 300
   install_fault_page
-  for _ in 1 2 3 4 5 6 7 8; do http_code "$(fault_url 'action=hog&mb=100')" >/dev/null; done
+  provoke_heap_oom
   check oom
   [ "$status" -eq 2 ]
   expect oom crit heap
