@@ -57,7 +57,7 @@ xinit_layout_set() {
 # xinit_systemctl_show <unit> <property>: print one property of a unit. Returns 1 without systemd.
 xinit_systemctl_show() {
   command -v systemctl >/dev/null 2>&1 || return 1
-  systemctl show -p "$2" --value "$1" 2>/dev/null
+  systemctl show -p "$2" --value -- "$1" 2>/dev/null
 }
 
 # xinit_dpkg_installed <glob>: print "package<tab>version" for each installed package matching.
@@ -78,10 +78,18 @@ xinit_dpkg_installed() {
 # _xinit_layout_from_config: the configured values come first. An empty value is as not set.
 _xinit_layout_from_config() {
   local key value
+  # The characters of a unit name. It never starts with a -, which systemctl would take for an
+  # option.
+  local re_unit='^[A-Za-z0-9:_.\\@][A-Za-z0-9:_.\\@-]*$'
   for key in "${XINIT_LAYOUT_KEYS[@]}"; do
     value="${XINIT_CFG[$key]-}"
     case "$key" in
-      UNIT) [ -n "$value" ] && [[ "$value" != *.* ]] && value="$value.service" ;;
+      UNIT)
+        if [ -n "$value" ]; then
+          [[ "$value" =~ $re_unit ]] || xinit_die "UNIT=$value is not the name of a systemd unit"
+          [[ "$value" != *.* ]] && value="$value.service"
+        fi
+        ;;
       BASE_URL | WEBAPP_DIR | CONFIG_DIR | PERMDIR)
         while [ "${#value}" -gt 1 ] && [ "${value: -1}" = "/" ]; do value="${value%/}"; done ;;
     esac

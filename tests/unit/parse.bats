@@ -261,6 +261,8 @@ jdbc:postgresql:///wiki                                 postgresql|localhost|543
 jdbc:mariadb://localhost/xwiki?useSSL=false             mariadb|localhost|3306|xwiki
 jdbc:mysql://10.0.0.5:3307/xwiki?useSSL=false&a=b       mysql|10.0.0.5|3307|xwiki
 jdbc:MySQL://localhost/xwiki                            mysql|localhost|3306|xwiki
+jdbc:mysql://user:pa/ss@db.example.org/xwiki            mysql|db.example.org|3306|xwiki
+jdbc:postgresql://user@db1:5433/wiki                    postgresql|db1|5433|wiki
 jdbc:oracle:thin:@localhost:1521:XE                     oracle|localhost|1521|XE
 jdbc:oracle:thin:@//ora.example.org:1522/service        oracle|ora.example.org|1522|service
 jdbc:hsqldb:file:/var/lib/xwiki/data/database/xwiki_db;shutdown=true   hsqldb|||

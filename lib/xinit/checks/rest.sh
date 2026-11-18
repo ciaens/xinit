@@ -27,6 +27,7 @@ xinit_check_rest() {
     xinit_result rest unknown no-url "BASE_URL is not known: see 'xinit layout'"
     return 0
   fi
+  xinit_http_config rest || return 0
   url="$base/rest/"
   xinit_http_get "$url" -H 'Accept: application/json'
   metrics=("code=$((10#$XINIT_HTTP_CODE))" "time_seconds=$XINIT_HTTP_TIME")

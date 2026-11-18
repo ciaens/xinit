@@ -201,6 +201,30 @@ XML
   expect BASE_URL http://localhost:8181/xwiki
 }
 
+@test "layout: a connector bound to one address gives that address, not localhost" {
+  use_fixture tomcat10-pgsql
+  sed -i 's/<Connector port="8080"/<Connector address="192.0.2.10" port="8080"/' \
+    "$XINIT_ROOT/etc/tomcat10/server.xml"
+  layout
+  expect BASE_URL http://192.0.2.10:8080/xwiki
+  sed -i 's/address="192.0.2.10"/address="::1"/' "$XINIT_ROOT/etc/tomcat10/server.xml"
+  layout
+  expect BASE_URL "http://[::1]:8080/xwiki"
+  sed -i 's/address="::1"/address="0.0.0.0"/' "$XINIT_ROOT/etc/tomcat10/server.xml"
+  layout
+  expect BASE_URL http://localhost:8080/xwiki
+}
+
+@test "layout: a UNIT that systemctl would take for an option is refused" {
+  use_fixture tomcat10-pgsql
+  layout -o UNIT=--host=x.example
+  [ "$status" -eq 3 ]
+  [[ "$stderr" == *"is not the name of a systemd unit"* ]]
+  [ -z "$(calls systemctl)" ]
+  layout
+  [[ "$(calls systemctl | head -n 1)" == "show -p "*" --value -- tomcat10.service" ]]
+}
+
 @test "layout: without XWiki's context file, BASE_URL is asked for (exit 3)" {
   use_fixture tomcat10-pgsql
   rm "$XINIT_ROOT/etc/tomcat10/Catalina/localhost/xwiki.xml"

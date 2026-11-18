@@ -46,9 +46,10 @@ xinit_tomcat_context_path() {
   printf '/%s\n' "${name//#//}"
 }
 
-# xinit_tomcat_http_port <server.xml>: print the port of the first plain HTTP connector.
-xinit_tomcat_http_port() {
-  local tag protocol port
+# xinit_tomcat_http_endpoint <server.xml>: print the "host:port" to reach the first plain HTTP
+# connector at. The host is localhost, unless the connector listens on one address only.
+xinit_tomcat_http_endpoint() {
+  local tag protocol port address
   while IFS= read -r tag; do
     protocol="$(xinit_xml_attr "$tag" protocol)" || protocol="HTTP/1.1"
     [[ "$protocol" == AJP* || "$protocol" == *.ajp.* ]] && continue
@@ -56,7 +57,14 @@ xinit_tomcat_http_port() {
     port="$(xinit_xml_attr "$tag" port)" || continue
     # A port can be a ${property}: then it is not known from this file.
     [[ "$port" =~ ^[0-9]+$ ]] || continue
-    printf '%s\n' "$port"
+    address="$(xinit_xml_attr "$tag" address)" || address=""
+    case "$address" in
+      "" | 0.0.0.0 | :: | "[::]" | localhost | 127.0.0.1) address=localhost ;;
+      *:*) [[ "$address" == "["* ]] || address="[$address]" ;;
+    esac
+    [[ "$address" =~ ^[][A-Za-z0-9:.-]+$ ]] || continue
+    [ "$port" = 80 ] && port="" || port=":$port"
+    printf '%s%s\n' "$address" "$port"
     return 0
   done < <(xinit_xml_elements "$1" Connector)
   return 1
@@ -65,8 +73,8 @@ xinit_tomcat_http_port() {
 # xinit_tomcat_base_url <tomcat config dir> <webapp dir>: print the local URL of the webapp, from
 # the connector's port and the context file whose docBase is the webapp.
 xinit_tomcat_base_url() {
-  local conf="$1" webapp="$2" file tag doc_base port path="" found=1
-  port="$(xinit_tomcat_http_port "$conf/server.xml")" || return 1
+  local conf="$1" webapp="$2" file tag doc_base host_port path="" found=1
+  host_port="$(xinit_tomcat_http_endpoint "$conf/server.xml")" || return 1
   for file in "$conf"/Catalina/localhost/*.xml; do
     [ -e "$file" ] || continue
     tag="$(xinit_xml_elements "$file" Context | head -n 1)"
@@ -79,8 +87,7 @@ xinit_tomcat_base_url() {
     fi
   done
   [ "$found" -eq 0 ] || return 1
-  [ "$port" = 80 ] && port="" || port=":$port"
-  printf 'http://localhost%s%s\n' "$port" "$path"
+  printf 'http://%s%s\n' "$host_port" "$path"
 }
 
 xinit_profile_debian_tomcat_fill() {

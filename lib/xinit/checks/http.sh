@@ -44,7 +44,8 @@ xinit_config_define HTTP_NETRC
 xinit_http_get() {
   local url="$1" output line netrc="${XINIT_CFG[HTTP_NETRC]-}"
   shift
-  local args=(-sS --max-time "${XINIT_CFG[HTTP_TIMEOUT]}" -A "xinit/$XINIT_VERSION"
+  # -q comes first: the user's ~/.curlrc must not change the request, or make curl write files.
+  local args=(-q -sS --max-time "${XINIT_CFG[HTTP_TIMEOUT]}" -A "xinit/$XINIT_VERSION"
     -w '\nXINIT-HTTP\t%{http_code}\t%{time_total}\t%{redirect_url}\n')
   XINIT_HTTP_EXIT=0 XINIT_HTTP_ERROR="" XINIT_HTTP_CODE=000 XINIT_HTTP_TIME=0
   XINIT_HTTP_REDIRECT="" XINIT_HTTP_BODY=""
@@ -72,6 +73,18 @@ xinit_http_get() {
     esac
   done < <(printf '%s\n' "$output")
   return 0
+}
+
+# xinit_http_config <check>: check the HTTP_* numbers. Returns 1, with an unknown result recorded,
+# when one is not a number.
+xinit_http_config() {
+  local key
+  for key in HTTP_TIMEOUT HTTP_SLOW; do
+    if ! xinit_config_number "$key" decimal >/dev/null; then
+      xinit_result "$1" unknown bad-config "$key must be a number of seconds"
+      return 1
+    fi
+  done
 }
 
 # xinit_http_failure <check> <url> [metric...]: record the result for a request that did not give
@@ -128,6 +141,7 @@ xinit_check_http() {
     xinit_result http unknown no-url "BASE_URL is not known: see 'xinit layout'"
     return 0
   fi
+  xinit_http_config http || return 0
   url="$base${XINIT_CFG[HTTP_PATH]}"
   xinit_http_get "$url" -o /dev/null
   metrics=("code=$((10#$XINIT_HTTP_CODE))" "time_seconds=$XINIT_HTTP_TIME")
@@ -141,7 +155,7 @@ xinit_check_http() {
     return 0
   fi
   time_ms="$(xinit_seconds_to_ms "$XINIT_HTTP_TIME")"
-  slow_ms="$(xinit_seconds_to_ms "${XINIT_CFG[HTTP_SLOW]}")"
+  slow_ms="$(xinit_seconds_to_ms "$(xinit_config_number HTTP_SLOW decimal)")"
   if [ "$time_ms" -ge "$slow_ms" ]; then
     xinit_result http warn slow \
       "HTTP $XINIT_HTTP_CODE from $url in ${XINIT_HTTP_TIME}s, slower than ${XINIT_CFG[HTTP_SLOW]}s" \

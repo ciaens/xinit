@@ -141,9 +141,11 @@ use_fixture() {
   # journalctl --no-pager -o cat -u <unit> --since ... | ... --since ... _TRANSPORT=kernel + _PID=1
   fake journalctl '
     if [ -n "${FAKE_JOURNAL_DENIED:-}" ]; then
-      echo "No journal files were opened due to insufficient permissions."
+      echo "No journal files were opened due to insufficient permissions." >&2
       exit 0
     fi
+    # -n 0: no message, only what journalctl itself has to say.
+    case " $* " in *" -n 0 "*) exit 0 ;; esac
     case " $* " in
       *" -u "*) [ -z "${FAKE_JOURNAL_UNIT:-}" ] || cat "$FAKE_JOURNAL_UNIT" ;;
       *" _TRANSPORT=kernel "*) [ -z "${FAKE_JOURNAL_SYSTEM:-}" ] || cat "$FAKE_JOURNAL_SYSTEM" ;;

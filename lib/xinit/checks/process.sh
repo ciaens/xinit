@@ -38,6 +38,10 @@ xinit_check_process() {
       active | reloading)
         if [ -n "$pid" ]; then
           xinit_result process ok running "$unit is running, JVM pid $pid" "${metrics[@]}"
+        elif [ -n "${XINIT_CFG[PID_FILE]-}" ]; then
+          xinit_result process crit stopped \
+            "$unit is active, but no JVM is running with the PID in ${XINIT_CFG[PID_FILE]}" \
+            "${metrics[@]}"
         else
           xinit_result process ok running \
             "$unit is running (its main process is not java: set PID_FILE to name the JVM)" \

@@ -42,6 +42,7 @@ _xinit_tcp_probe() {
   # shellcheck disable=SC2016  # $1 and $2 are for the inner shell
   error="$(timeout "$timeout" bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$host" "$port" 2>&1)" || rc=$?
   [ "$rc" -eq 0 ] && return 0
+  error="${error%%$'\n'*}"
   case "$rc:$error" in
     124:*) XINIT_TCP_ERROR=timeout ;;
     *"Connection refused"*) XINIT_TCP_ERROR=refused ;;
@@ -69,8 +70,9 @@ _xinit_db_query() {
       ;;
     mysql | mariadb)
       client="$(command -v mariadb || command -v mysql)" || return 2
-      # --defaults-extra-file has to be the first option.
-      output="$("$client" --defaults-extra-file="$credentials" --protocol=tcp -h "$host" \
+      # --defaults-file has to be the first option. With it, no other option file is read: a
+      # password in the user's own ~/.my.cnf does not replace this one.
+      output="$("$client" --defaults-file="$credentials" --protocol=tcp -h "$host" \
         -P "$port" -u "$user" --connect-timeout="$timeout" -N -B -e 'SELECT 1' "$name" 2>&1)" ||
         rc=$?
       ;;
@@ -86,8 +88,19 @@ _xinit_db_query() {
 xinit_check_db() {
   local type="${XINIT_LAYOUT[DB_TYPE]-}" host="${XINIT_LAYOUT[DB_HOST]-}"
   local port="${XINIT_LAYOUT[DB_PORT]-}" name="${XINIT_LAYOUT[DB_NAME]-}"
-  local user="${XINIT_LAYOUT[DB_USER]-}" timeout="${XINIT_CFG[DB_TIMEOUT]}"
+  local user="${XINIT_LAYOUT[DB_USER]-}" timeout
   local credentials="${XINIT_CFG[DB_CREDENTIALS]-}" where rc=0 suffix
+  # What a database or user name is made of. Anything else is not passed to a client, where a
+  # leading - or a = would change the meaning of the argument.
+  local re_name='^[A-Za-z0-9_][A-Za-z0-9_.$-]*$'
+  if ! timeout="$(xinit_config_number DB_TIMEOUT)"; then
+    xinit_result db unknown bad-config "DB_TIMEOUT must be a number of seconds"
+    return 0
+  fi
+  if [ -n "$port" ] && [[ ! "$port" =~ ^[0-9]+$ ]]; then
+    xinit_result db unknown bad-config "DB_PORT must be a number"
+    return 0
+  fi
   if [ -z "$type" ]; then
     xinit_result db unknown no-db \
       "the database is not known: hibernate.cfg.xml cannot be read, and DB_TYPE is not set"
@@ -120,9 +133,14 @@ xinit_check_db() {
     esac
     credentials="${XINIT_CONF_DIR:-/etc/xinit}/credentials/$XINIT_INSTANCE.$suffix"
   fi
-  if [ ! -r "$credentials" ] || [ -z "$name" ] || [ -z "$user" ]; then
+  if [ ! -r "$credentials" ]; then
     xinit_result db ok port-only \
       "$where accepts connections (the login is not checked: no credentials file $credentials)"
+    return 0
+  fi
+  if [[ ! "$name" =~ $re_name || ! "$user" =~ $re_name ]]; then
+    xinit_result db ok port-only \
+      "$where accepts connections (the login is not checked: unusual database or user name)"
     return 0
   fi
   _xinit_db_query "$type" "$host" "$port" "$name" "$user" "$credentials" "$timeout" || rc=$?

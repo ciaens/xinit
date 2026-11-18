@@ -32,6 +32,10 @@ kernel_oom_journal() {
   echo "$file"
 }
 
+# journal_reads: the journalctl calls that read messages, without the ones that only ask
+# journalctl whether it may read (-n 0).
+journal_reads() { calls journalctl | grep -v -- ' -n 0 '; }
+
 # ---- oom
 
 @test "oom: a journal without out-of-memory errors is ok" {
@@ -41,8 +45,8 @@ kernel_oom_journal() {
   [ "$(of oom metrics.heap_errors)" = 0 ]
   [ "$(of oom metrics.kernel_kills)" = 0 ]
   # The unit's log, then the kernel's and systemd's messages, both bounded in time.
-  [[ "$(calls journalctl | sed -n 1p)" == "--no-pager -o cat -u tomcat10.service --since -3600s" ]]
-  [[ "$(calls journalctl | sed -n 2p)" == "--no-pager -o cat --since -3600s _TRANSPORT=kernel + _PID=1" ]]
+  [[ "$(journal_reads | sed -n 1p)" == "--no-pager -o cat -u tomcat10.service --since -3600s" ]]
+  [[ "$(journal_reads | sed -n 2p)" == "--no-pager -o cat --since -3600s _TRANSPORT=kernel + _PID=1" ]]
 }
 
 @test "S-OOM-01 oom: java.lang.OutOfMemoryError in the unit's log is crit, heap" {
@@ -55,11 +59,11 @@ kernel_oom_journal() {
 
 @test "S-OOM-02 oom: only the log since the JVM started is searched" {
   FAKE_JVM_AGE=125 check oom
-  [[ "$(calls journalctl | sed -n 1p)" == *"-u tomcat10.service --since -125s" ]]
+  [[ "$(journal_reads | sed -n 1p)" == *"-u tomcat10.service --since -125s" ]]
   # The kernel's messages are searched over the whole window: the kill is why the JVM is young.
-  [[ "$(calls journalctl | sed -n 2p)" == *"--since -3600s _TRANSPORT=kernel"* ]]
+  [[ "$(journal_reads | sed -n 2p)" == *"--since -3600s _TRANSPORT=kernel"* ]]
   FAKE_JVM_AGE=125 check oom -o OOM_WINDOW=60
-  [[ "$(calls journalctl | sed -n 3p)" == *"-u tomcat10.service --since -60s" ]]
+  [[ "$(journal_reads | sed -n 3p)" == *"-u tomcat10.service --since -60s" ]]
 }
 
 @test "S-OOM-03 oom: a kill by the kernel's OOM killer is warn, kernel" {
@@ -78,6 +82,27 @@ kernel_oom_journal() {
   [ "$(of oom metrics.kernel_kills)" = 1 ]
 }
 
+@test "oom: one kill reported by both the kernel and systemd is counted once" {
+  { cat "$(kernel_oom_journal)"
+    echo "tomcat10.service: A process of this unit has been killed by the OOM killer."
+  } >"$BATS_TEST_TMPDIR/both.txt"
+  FAKE_JOURNAL_SYSTEM="$BATS_TEST_TMPDIR/both.txt" check oom
+  expect oom warn kernel
+  [ "$(of oom metrics.kernel_kills)" = 1 ]
+}
+
+@test "oom: a unit of the same name in a container of this host is not ours" {
+  # On a host, the unit's control group has no container prefix.
+  sed -i 's#^ControlGroup=.*#ControlGroup=/system.slice/tomcat10.service#' \
+    "$XINIT_ROOT/cmd/systemctl-show-tomcat10.txt"
+  FAKE_JOURNAL_SYSTEM="$FIXTURES/journal/kernel-oom-system.txt" check oom
+  expect oom ok ok
+  sed 's#task_memcg=/docker/[0-9a-f]*/system.slice#task_memcg=/system.slice#' \
+    "$FIXTURES/journal/kernel-oom-system.txt" >"$BATS_TEST_TMPDIR/host.txt"
+  FAKE_JOURNAL_SYSTEM="$BATS_TEST_TMPDIR/host.txt" check oom
+  expect oom warn kernel
+}
+
 @test "oom: an OOM kill in another unit or container is not ours" {
   sed 's#system.slice/tomcat10.service#system.slice/other.service#g' "$(kernel_oom_journal)" \
     >"$BATS_TEST_TMPDIR/other.txt"
@@ -93,6 +118,23 @@ kernel_oom_journal() {
     check oom
   expect oom crit heap
   [ "$(of oom metrics.kernel_kills)" = 1 ]
+}
+
+@test "oom: a logged line about permissions is not taken for a journal that cannot be read" {
+  { cat "$FIXTURES/journal/heap-oom-unit.txt"
+    echo "LDAP bind failed: insufficient permissions for cn=xwiki"
+  } >"$BATS_TEST_TMPDIR/unit.txt"
+  FAKE_JOURNAL_UNIT="$BATS_TEST_TMPDIR/unit.txt" check oom
+  [ "$status" -eq 2 ]
+  expect oom crit heap
+}
+
+@test "oom: OOM_WINDOW with leading zeros is a decimal number" {
+  check oom disk -o OOM_WINDOW=0900
+  [ "$status" -eq 0 ]
+  expect oom ok ok
+  expect disk ok ok
+  [[ "$(journal_reads | sed -n 1p)" == *"--since -900s" ]]
 }
 
 @test "oom: a journal that cannot be read is unknown, not ok" {
@@ -161,7 +203,7 @@ kernel_oom_journal() {
   printf '[client]\npassword=s3cret\n' >"$XINIT_CONF_DIR/credentials/default.my.cnf"
   check db
   expect db ok ok
-  [ "$(calls mariadb)" = "--defaults-extra-file=$XINIT_CONF_DIR/credentials/default.my.cnf --protocol=tcp -h localhost -P 3306 -u xwiki --connect-timeout=10 -N -B -e SELECT 1 xwiki" ]
+  [ "$(calls mariadb)" = "--defaults-file=$XINIT_CONF_DIR/credentials/default.my.cnf --protocol=tcp -h localhost -P 3306 -u xwiki --connect-timeout=10 -N -B -e SELECT 1 xwiki" ]
   [[ "$(calls timeout)" == *" _ localhost 3306" ]]
 }
 
@@ -171,6 +213,25 @@ kernel_oom_journal() {
   expect db ok ok
   [ "$(cat "$FAKEBIN/psql.env")" = "PGPASSFILE=$BATS_TEST_TMPDIR/my.pgpass" ]
   [[ "$(calls timeout)" == "3 bash "* ]]
+}
+
+@test "db: a database or user name that a client could misread is not passed to it" {
+  mkdir -p "$XINIT_CONF_DIR/credentials"
+  echo "localhost:5432:*:xwiki:s3cret" >"$XINIT_CONF_DIR/credentials/default.pgpass"
+  check db -o "DB_NAME=xwiki sslmode=disable"
+  expect db ok port-only
+  check db -o DB_USER=-xwiki
+  expect db ok port-only
+  [ -z "$(calls psql)" ]
+}
+
+@test "db: DB_TIMEOUT and DB_PORT that are not numbers are unknown, not a database failure" {
+  check db -o DB_TIMEOUT=abc
+  [ "$status" -eq 3 ]
+  expect db unknown bad-config
+  check db -o DB_PORT=5432x
+  expect db unknown bad-config
+  [ -z "$(calls timeout)" ]
 }
 
 @test "S-DB-02 db: a database with no client to log in with is checked on its port only" {

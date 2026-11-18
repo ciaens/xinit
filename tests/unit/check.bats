@@ -49,6 +49,12 @@ expect() {
   [ "$status" -eq 64 ]
 }
 
+@test "check: CHECKS can come from the environment, as XINIT_CHECKS" {
+  XINIT_CHECKS="http, disk" check
+  [ "$status" -eq 0 ]
+  [ "$(json "' '.join(r['check'] for r in d['results'])")" = "http disk" ]
+}
+
 @test "check: the exit code is the worst status: crit over warn over unknown over ok" {
   # warn (slow) + unknown (no PERMDIR) + ok
   FAKE_CURL_TIME=15.000000 check -o PERMDIR=/nowhere
@@ -148,6 +154,19 @@ expect() {
   [ -z "$(of process metrics.uptime_seconds)" ]
 }
 
+@test "process: with PID_FILE set, a running unit without that JVM is crit" {
+  echo sh >"$XINIT_ROOT/proc/98/comm"
+  mkdir -p "$XINIT_ROOT/run"
+  echo 4242 >"$XINIT_ROOT/run/xwiki.pid"
+  check process -o PID_FILE=/run/xwiki.pid
+  [ "$status" -eq 2 ]
+  expect process crit stopped
+  mkdir -p "$XINIT_ROOT/proc/4242"
+  echo java >"$XINIT_ROOT/proc/4242/comm"
+  check process -o PID_FILE=/run/xwiki.pid
+  expect process ok running
+}
+
 @test "process: without systemd, PID_FILE tells whether the JVM runs" {
   fake systemctl 'echo "System has not been booted with systemd as init system" >&2; exit 1'
   check process
@@ -172,6 +191,8 @@ expect() {
   local call
   call="$(calls curl)"
   [[ "$call" == *" -- http://localhost:8080/xwiki/bin/view/Main/" ]]
+  # -q first: the user's ~/.curlrc is not read.
+  [[ "$call" == "-q "* ]]
   [[ "$call" == *"--max-time 30"* ]]
   [[ "$call" != *"-L"* && "$call" != *"--location"* && "$call" != *"--insecure"* ]]
   [[ "$call" != *"-u "* && "$call" != *"--user "* ]]
@@ -207,6 +228,24 @@ expect() {
   expect http ok ok
   FAKE_CURL_TIME=2.500000 check http -o HTTP_SLOW=2
   expect http warn slow
+}
+
+@test "http: HTTP_SLOW may have a fraction; a threshold that is not a number is unknown" {
+  FAKE_CURL_TIME=2.600000 check http -o HTTP_SLOW=2.5
+  expect http warn slow
+  FAKE_CURL_TIME=2.400000 check http -o HTTP_SLOW=2.5
+  expect http ok ok
+  FAKE_CURL_TIME=50.000000 check http rest -o HTTP_SLOW=abc
+  [ "$status" -eq 3 ]
+  [ -z "$stderr" ]
+  expect http unknown bad-config
+  expect rest unknown bad-config
+  local before
+  before="$(calls curl | wc -l)"
+  check http -o HTTP_TIMEOUT=abc
+  expect http unknown bad-config
+  # No request was made with it.
+  [ "$(calls curl | wc -l)" -eq "$before" ]
 }
 
 @test "http: no answer within HTTP_TIMEOUT is crit" {

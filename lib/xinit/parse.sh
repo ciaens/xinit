@@ -160,12 +160,13 @@ xinit_jdbc_parse() {
       rest="${rest%%\?*}"
       if [ "${rest:0:2}" = "//" ]; then
         rest="${rest:2}"
+        # user:password@ in front of the host: the password may hold any character, / included.
+        [[ "$rest" == *@* ]] && rest="${rest##*@}"
         authority="${rest%%/*}"
         _jdbc[name]=""
         [ "$rest" != "$authority" ] && _jdbc[name]="${rest#*/}"
         # Several hosts can be listed for failover: the first one is checked.
         authority="${authority%%,*}"
-        authority="${authority##*@}"
         if [[ "$authority" =~ $re_hostport ]]; then
           _jdbc[host]="${BASH_REMATCH[1]}"
           _jdbc[port]="${BASH_REMATCH[3]}"

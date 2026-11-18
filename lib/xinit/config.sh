@@ -67,6 +67,23 @@ xinit_config_get() {
   printf '%s\n' "${XINIT_CFG[$1]}"
 }
 
+# xinit_config_number <KEY> [decimal]: print the value of a key that has to be a whole number, or
+# with "decimal" a number that may have a fraction. Leading zeros are dropped, so that the value
+# is never read as octal. Returns 1 when the value is not such a number.
+xinit_config_number() {
+  local value="${XINIT_CFG[$1]-}" whole fraction=""
+  local re_whole='^[0-9]+$' re_decimal='^[0-9]+(\.[0-9]+)?$'
+  if [ "${2:-}" = decimal ]; then
+    [[ "$value" =~ $re_decimal ]] || return 1
+    [[ "$value" == *.* ]] && fraction=".${value#*.}"
+    whole="${value%%.*}"
+  else
+    [[ "$value" =~ $re_whole ]] || return 1
+    whole="$value"
+  fi
+  printf '%s%s\n' "$((10#$whole))" "$fraction"
+}
+
 # xinit_config_dump: one "KEY<tab>source<tab>value" line per key that is set.
 xinit_config_dump() {
   local key

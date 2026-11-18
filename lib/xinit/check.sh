@@ -23,11 +23,11 @@
 # A check is a function xinit_check_<name>, in checks/<name>.sh. It reads the layout and the
 # configuration, changes nothing on the system, and records its findings with xinit_result.
 
-# The checks, in the order they run.
-XINIT_CHECKS=(process http rest oom db disk)
+# The checks, in the order they run. Not XINIT_CHECKS: that is the environment variable of CHECKS.
+XINIT_CHECK_NAMES=(process http rest oom db disk)
 
 # The checks to run, when none is named on the command line.
-xinit_config_define CHECKS "${XINIT_CHECKS[*]}"
+xinit_config_define CHECKS "${XINIT_CHECK_NAMES[*]}"
 # How long after its start a JVM may still refuse or not answer requests without that being a
 # failure, in seconds.
 xinit_config_define STARTUP_GRACE 300
@@ -45,8 +45,8 @@ xinit_jvm_age() {
 
 # xinit_jvm_starting: the JVM started less than STARTUP_GRACE seconds ago.
 xinit_jvm_starting() {
-  local age grace="${XINIT_CFG[STARTUP_GRACE]}"
-  [[ "$grace" =~ ^[0-9]+$ ]] || return 1
+  local age grace
+  grace="$(xinit_config_number STARTUP_GRACE)" || return 1
   age="$(xinit_jvm_age)" || return 1
   [ "$age" -lt "$grace" ]
 }
@@ -92,11 +92,11 @@ xinit_cmd_check() {
   fi
   for name in "${names[@]}"; do
     found=1
-    for known in "${XINIT_CHECKS[@]}"; do
+    for known in "${XINIT_CHECK_NAMES[@]}"; do
       [ "$name" = "$known" ] && found=0
     done
     [ "$found" -eq 0 ] ||
-      xinit_die "unknown check: $name (the checks are: ${XINIT_CHECKS[*]})" "$XINIT_EXIT_USAGE"
+      xinit_die "unknown check: $name (the checks are: ${XINIT_CHECK_NAMES[*]})" "$XINIT_EXIT_USAGE"
   done
 
   if ! xinit_layout_resolve && [ -z "${XINIT_LAYOUT[PROFILE]+x}" ]; then

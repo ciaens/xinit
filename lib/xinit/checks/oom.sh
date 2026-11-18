@@ -33,25 +33,28 @@ xinit_config_define OOM_WINDOW 3600
 # XINIT_JOURNAL_OUTPUT. Returns 1 when the journal cannot be read, with the reason in
 # XINIT_JOURNAL_ERROR.
 _xinit_journal() {
-  local rc=0
+  local notice
   XINIT_JOURNAL_ERROR=""
-  XINIT_JOURNAL_OUTPUT="$(journalctl --no-pager -o cat "$@" 2>&1)" || rc=$?
-  case "$XINIT_JOURNAL_OUTPUT" in
+  XINIT_JOURNAL_OUTPUT=""
+  # journalctl exits 0 for a user who may not read the system journal, and only says so. Ask for
+  # no message at all, so that what it prints is its own words, not something XWiki logged.
+  notice="$(journalctl --no-pager -o cat -n 0 "$@" 2>&1)" || true
+  case "$notice" in
     *"insufficient permissions"* | *"not seeing messages from other users"*)
       XINIT_JOURNAL_ERROR="this user may not read it (add the user to the systemd-journal group)"
       return 1
       ;;
   esac
-  if [ "$rc" -ne 0 ]; then
-    XINIT_JOURNAL_ERROR="${XINIT_JOURNAL_OUTPUT%%$'\n'*}"
+  if ! XINIT_JOURNAL_OUTPUT="$(journalctl --no-pager -o cat "$@" 2>/dev/null)"; then
+    XINIT_JOURNAL_ERROR="journalctl failed${notice:+: ${notice%%$'\n'*}}"
     return 1
   fi
   return 0
 }
 
 xinit_check_oom() {
-  local source="${XINIT_LAYOUT[LOG_SOURCE]-}" window="${XINIT_CFG[OOM_WINDOW]}" unit
-  local age heap_window log heap=0 kind="" kernel=0 cgroup pattern minutes metrics
+  local source="${XINIT_LAYOUT[LOG_SOURCE]-}" window unit
+  local age heap_window log heap=0 kind="" kernel=0 by_systemd=0 cgroup pattern minutes metrics
   if [[ "$source" != journal:* ]]; then
     xinit_result oom unknown no-journal \
       "only the systemd journal can be searched, and LOG_SOURCE is '${source:-not known}'"
@@ -61,7 +64,7 @@ xinit_check_oom() {
     xinit_result oom unknown no-journal "journalctl is not installed"
     return 0
   fi
-  if [[ ! "$window" =~ ^[0-9]+$ ]]; then
+  if ! window="$(xinit_config_number OOM_WINDOW)"; then
     xinit_result oom unknown bad-config "OOM_WINDOW must be a number of seconds"
     return 0
   fi
@@ -87,17 +90,21 @@ xinit_check_oom() {
     kind="${kind#java.lang.OutOfMemoryError: }"
   fi
 
-  # The kernel's message names the control group, systemd's names the unit.
+  # The kernel's message names the control group of the process it killed: exactly the unit's,
+  # so that a unit of the same name in a container on this host is not taken for this one.
   cgroup="$(xinit_systemctl_show "$unit" ControlGroup)" || cgroup=""
   [ -n "$cgroup" ] || cgroup="/system.slice/$unit"
-  pattern="(oom_memcg|task_memcg)=[^,]*$(_xinit_regex_quote "$cgroup")(,|\$)"
-  pattern+="|^$(_xinit_regex_quote "$unit"): A process of this unit has been killed by the OOM killer"
+  pattern="task_memcg=$(_xinit_regex_quote "$cgroup")(,|\$)"
   if ! _xinit_journal --since "-${window}s" _TRANSPORT=kernel + _PID=1; then
     xinit_result oom unknown no-access "the journal cannot be read: $XINIT_JOURNAL_ERROR"
     return 0
   fi
   log="$XINIT_JOURNAL_OUTPUT"
   kernel="$(printf '%s\n' "$log" | grep -cE "$pattern")" || kernel=0
+  # systemd says it too, where it can tell. One kill gives both messages: count it once.
+  pattern="^$(_xinit_regex_quote "$unit"): A process of this unit has been killed by the OOM killer"
+  by_systemd="$(printf '%s\n' "$log" | grep -cE "$pattern")" || by_systemd=0
+  [ "$by_systemd" -gt "$kernel" ] && kernel="$by_systemd"
 
   metrics=("heap_errors=$heap" "kernel_kills=$kernel")
   if [ "$heap" -gt 0 ]; then
