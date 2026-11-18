@@ -25,7 +25,7 @@ load helpers
 
 @test "cli: a command that is not implemented yet exits unknown (3)" {
   export XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc"
-  run "$XINIT" watch
+  run "$XINIT" report
   [ "$status" -eq 3 ]
   [[ "$output" == *"not implemented yet"* ]]
 }

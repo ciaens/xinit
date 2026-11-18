@@ -38,3 +38,9 @@ tests/fixtures/collect.sh xjetty-pgsql     # one variant
   300 KB), and only the header is read.
 - A symbolic link is replaced by the file it points to. The packages link Tomcat's context file
   `Catalina/localhost/xwiki.xml` to `/etc/xwiki/xwiki-tomcatN.xml`.
+
+## Journal
+
+`journal/` holds journal lines of real events, as `journalctl -o cat` prints them: a heap
+`OutOfMemoryError`, a kill by the kernel's OOM killer, and the start and end of a thread dump
+(`kill -3`). They were copied by hand from a test container.

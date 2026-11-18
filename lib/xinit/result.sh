@@ -110,7 +110,7 @@ xinit_json_string() {
   printf '"%s"' "$text"
 }
 
-# _xinit_results_json: {"instance":…,"status":…,"results":[{"check":…,"status":…,"reason":…,
+# _xinit_results_json [member]: {"instance":…,"status":…,"results":[{"check":…,"status":…,"reason":…,
 # "message":…,"metrics":{…}}]}
 _xinit_results_json() {
   local i metric sep="" msep
@@ -134,7 +134,7 @@ _xinit_results_json() {
     printf '}}'
     sep=","
   done
-  printf ']}\n'
+  printf ']%s}\n' "${1:+,$1}"
 }
 
 # _xinit_results_text: one line per result, then the overall status.
@@ -193,11 +193,11 @@ _xinit_results_nagios() {
   done
 }
 
-# xinit_results_print <text|json|nagios>
+# xinit_results_print <text|json|nagios> [one more JSON member, as "name":value]
 xinit_results_print() {
   case "$1" in
     text) _xinit_results_text ;;
-    json) _xinit_results_json ;;
+    json) _xinit_results_json "${2:-}" ;;
     nagios) _xinit_results_nagios ;;
   esac
 }

@@ -109,9 +109,11 @@ Unit tests (`tests/unit/`) run xinit on the host, against the real files of each
   `psql` and `mariadb` first on `PATH`. They answer as on a healthy instance, and `FAKE_*`
   variables change one answer: see `tests/unit/helpers.bash`.
 - `tests/fixtures/journal/` holds the journal lines of real out-of-memory faults.
-- `use_state` is for the commands that need no XWiki installation. It gives xinit empty
-  configuration, state and runtime directories, a fake `logger`, and a fixed clock: xinit reads the
-  time from `XINIT_TEST_NOW` when it is set, so a test moves in time without waiting.
+- `use_state` gives xinit state and runtime directories of its own, a fake `logger`, and a fixed
+  clock: xinit reads the time from `XINIT_TEST_NOW` when it is set, so a test moves in time without
+  waiting. Alone, it is for the commands that need no XWiki installation. After `use_fixture`, it
+  is for `xinit watch`, whose scenarios also run as unit tests: `kill` and `sleep` are fakes, so no
+  real process gets a signal.
 
 ## Fault library
 
@@ -198,13 +200,14 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
 | S-PROC-02 | 2 | `xinit setup`, then killed JVM | systemd restarts it; `xinit-notify@` ran once (journal); no `xinit watch` restart |
-| S-WATCH-01 | 2 | frozen JVM, `RESTART_AFTER=3` | runs 1–2 only count; run 3 stores a thread dump, restarts once, sets cooldown |
-| S-WATCH-02 | 2 | still frozen during cooldown | no second restart |
-| S-WATCH-03 | 2 | maintenance on | no restart; failures recorded |
-| S-WATCH-04 | 2 | maintenance `--for 1m`, wait | maintenance off by itself |
-| S-WATCH-05 | 2 | DB auth fault (permanent) | ≤ `MAX_RESTARTS` restarts, then a flapping escalation, then no more restarts |
-| S-WATCH-06 | 2 | two `xinit watch` at once | one runs, the other exits on the lock |
-| S-WATCH-07 | 2 | healthy for N runs | counters reset, nothing restarted |
+| S-WATCH-01 | 2 | frozen JVM, `RESTART_AFTER=3` | runs 1–2 only count; run 3 restarts once (a frozen JVM gives no thread dump) |
+| S-WATCH-02 | 2 | a page that always answers 503, again after a restart | reason `cooldown`, no second restart |
+| S-WATCH-03 | 2 | maintenance on, failing page | no restart; the failure is counted |
+| S-WATCH-04 | 2 | maintenance `--for 3s`, wait | the maintenance no longer holds a restart back |
+| S-WATCH-05 | 2 | a page that always answers 503, `MAX_RESTARTS=2`, no cooldown | 2 restarts, then reason `flapping`, one notification, no more restart |
+| S-WATCH-06 | 2 | the lock is held | the run ends at once, reason `locked`, no check run |
+| S-WATCH-07 | 2 | healthy runs | reason `healthy`, count 0, nothing restarted |
+| S-WATCH-08 | 2 | a page that always answers 503 while the JVM runs, `RESTART_AFTER=1` | a thread dump of the running JVM is stored, 0600, before the restart |
 | S-SETUP-01 | 2 | `setup` then `setup --undo` | `systemctl cat <unit>` identical to before; no file left from the manifest |
 | S-SETUP-02 | 2 | `setup` with `JVM_OPTS_APPEND` | the JVM command line has both the package options and the added ones |
 | S-SETUP-03 | 2 | watch timer | runs as user `xinit`; a restart goes through the path unit, for `<unit>` only (the `xinit` user cannot restart another unit, nor run `systemctl restart` itself) |

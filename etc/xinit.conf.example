@@ -82,6 +82,24 @@
 #DISK_WARN=10
 #DISK_CRIT=5
 
+# ---- Restarts ---------------------------------------------------------------------------------
+# `xinit watch` runs every minute. It restarts XWiki when a check of ACT_ON has been critical for
+# RESTART_AFTER runs in a row. A warning, or a check that could not tell, never causes a restart.
+
+# The checks whose critical status counts, separated by spaces or commas. Empty: never restart.
+#ACT_ON=process http oom
+# How many failed runs in a row before a restart.
+#RESTART_AFTER=3
+# How long after a restart the next one has to wait. Durations are explained below.
+#COOLDOWN=15min
+# At most MAX_RESTARTS restarts in MAX_RESTARTS_WINDOW. Then xinit stops restarting and says so
+# once, until XWiki is healthy again.
+#MAX_RESTARTS=3
+#MAX_RESTARTS_WINDOW=1h
+# The command that restarts XWiki, when it is not `systemctl restart UNIT`. It is split on spaces
+# and run without a shell: no quotes, no variables, no pipes.
+#RESTART_CMD=
+
 # ---- Maintenance and state --------------------------------------------------------------------
 
 # How long `xinit maint on` lasts without --for. A duration is a number of seconds, or numbers

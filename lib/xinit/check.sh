@@ -59,9 +59,46 @@ xinit_seconds_to_ms() {
   echo "$((10#${seconds:-0} * 1000 + 10#${fraction:0:3}))"
 }
 
+# xinit_checks_known <check...>: every name is a check. Else returns 1, with the first name that
+# is not in XINIT_CHECK_UNKNOWN.
+xinit_checks_known() {
+  local name known found
+  XINIT_CHECK_UNKNOWN=""
+  for name in "$@"; do
+    found=1
+    for known in "${XINIT_CHECK_NAMES[@]}"; do
+      [ "$name" = "$known" ] && found=0
+    done
+    if [ "$found" -ne 0 ]; then
+      XINIT_CHECK_UNKNOWN="$name"
+      return 1
+    fi
+  done
+}
+
+# xinit_checks_run <check...>: resolve the layout and run the checks, which record their results.
+# Returns 1 when there is no installation to check, with that as the only result.
+xinit_checks_run() {
+  local name before
+  if ! xinit_layout_resolve && [ -z "${XINIT_LAYOUT[PROFILE]+x}" ]; then
+    # Nothing to check: say so as a result.
+    xinit_result layout unknown no-installation \
+      "no XWiki installation was detected: see 'xinit layout' for what to configure"
+    return 1
+  fi
+  for name in "$@"; do
+    before="${#XINIT_RESULT_CHECK[@]}"
+    # A check that fails without a result is a bug: report it rather than hide it.
+    if ! "xinit_check_$name" || [ "${#XINIT_RESULT_CHECK[@]}" -eq "$before" ]; then
+      [ "${#XINIT_RESULT_CHECK[@]}" -gt "$before" ] ||
+        xinit_result "$name" unknown no-result "the check ended without a result"
+    fi
+  done
+}
+
 # xinit_cmd_check [--format text|json|nagios] [check...]: the `xinit check` command.
 xinit_cmd_check() {
-  local format=text names=() name known found before
+  local format=text names=() name
   while [ $# -gt 0 ]; do
     case "$1" in
       --format)
@@ -90,29 +127,10 @@ xinit_cmd_check() {
       names+=("$name")
     done
   fi
-  for name in "${names[@]}"; do
-    found=1
-    for known in "${XINIT_CHECK_NAMES[@]}"; do
-      [ "$name" = "$known" ] && found=0
-    done
-    [ "$found" -eq 0 ] ||
-      xinit_die "unknown check: $name (the checks are: ${XINIT_CHECK_NAMES[*]})" "$XINIT_EXIT_USAGE"
-  done
-
-  if ! xinit_layout_resolve && [ -z "${XINIT_LAYOUT[PROFILE]+x}" ]; then
-    # Nothing to check: say so in the requested format.
-    xinit_result layout unknown no-installation \
-      "no XWiki installation was detected: see 'xinit layout' for what to configure"
-  else
-    for name in "${names[@]}"; do
-      before="${#XINIT_RESULT_CHECK[@]}"
-      # A check that fails without a result is a bug: report it rather than hide it.
-      if ! "xinit_check_$name" || [ "${#XINIT_RESULT_CHECK[@]}" -eq "$before" ]; then
-        [ "${#XINIT_RESULT_CHECK[@]}" -gt "$before" ] ||
-          xinit_result "$name" unknown no-result "the check ended without a result"
-      fi
-    done
-  fi
+  xinit_checks_known "${names[@]}" ||
+    xinit_die "unknown check: $XINIT_CHECK_UNKNOWN (the checks are: ${XINIT_CHECK_NAMES[*]})" \
+      "$XINIT_EXIT_USAGE"
+  xinit_checks_run "${names[@]}" || true
   xinit_results_print "$format"
   return "$(xinit_status_exit_code "$(xinit_results_status)")"
 }

@@ -139,16 +139,20 @@ and metrics of the implemented checks are in [checks.md](checks.md).
 
 `xinit watch` (timer, every minute by default):
 1. Takes `flock /run/xinit/<instance>/lock`. If another run holds it, it exits.
-2. Runs the checks marked `ACT_ON` (default `http process`).
-3. Updates the failure counters in the state dir.
-4. If a check has been `crit` for `RESTART_AFTER` consecutive runs (default 3), and there is no
-   maintenance and no cooldown, it does:
-   1. build the diagnostics report **before** restarting, since thread dumps must be taken while it hangs;
-   2. send a notification;
-   3. `systemctl restart <UNIT>` (or `RESTART_CMD`);
-   4. enter `COOLDOWN` (default 15 min, the old `MAINTENANCE_TIME`).
-5. If there are more than `MAX_RESTARTS` within `MAX_RESTARTS_WINDOW`, it stops acting and sends an
-   escalation ("flapping") mail.
+2. Runs the checks. Those marked `ACT_ON` count (default `process http oom`).
+3. Updates the count of failed runs in the state dir.
+4. If a check that counts has been `crit` for `RESTART_AFTER` consecutive runs (default 3), and
+   there is no maintenance and no cooldown, it does:
+   1. remember the restart, so that a run that dies halfway does not restart again and again;
+   2. take a thread dump **before** restarting, since it must be taken while XWiki hangs (the
+      full diagnostics report comes with Phase 3);
+   3. send a notification;
+   4. `systemctl restart <UNIT>` (or `RESTART_CMD`);
+   5. enter `COOLDOWN` (default 15 min, the old `MAINTENANCE_TIME`).
+5. After `MAX_RESTARTS` restarts within `MAX_RESTARTS_WINDOW`, it stops restarting and sends one
+   escalation ("flapping"), until a run finds XWiki healthy.
+
+A `warn` or an `unknown` never counts. The reference is [acting.md](acting.md).
 
 Container mode never restarts. `xinit check --health` exits 0 or 1 for `HEALTHCHECK` or a probe;
 the orchestrator owns restarts.

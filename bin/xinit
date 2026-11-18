@@ -62,6 +62,12 @@ fi
 . "$XINIT_LIB_DIR/state.sh"
 # shellcheck source=../lib/xinit/maint.sh
 . "$XINIT_LIB_DIR/maint.sh"
+# shellcheck source=../lib/xinit/act.sh
+. "$XINIT_LIB_DIR/act.sh"
+# shellcheck source=../lib/xinit/notify.sh
+. "$XINIT_LIB_DIR/notify.sh"
+# shellcheck source=../lib/xinit/watch.sh
+. "$XINIT_LIB_DIR/watch.sh"
 
 usage() {
   cat <<USAGE
@@ -74,14 +80,14 @@ Options, before or after the command:
 Commands:
   layout     show how this XWiki installation was detected
   check      run the checks (read-only)
-  watch      run the checks and act on failures (restart policy)
+  watch      run the checks and restart XWiki after repeated failures (--dry-run)
   report     build a diagnostics report
   maint      maintenance mode: on [--for DURATION] [--reason TEXT] | off | status
   setup      install the systemd units and drop-ins (--undo to remove them)
   version    print the version
   help       print this help
 
-'watch', 'report' and 'setup' are not implemented yet.
+'report' and 'setup' are not implemented yet.
 USAGE
 }
 
@@ -143,7 +149,12 @@ main() {
       xinit_config_load
       xinit_cmd_maint "${ARGS[@]:1}" || exit $?
       ;;
-    watch | report | setup)
+    watch)
+      xinit_instance_resolve "$OPT_INSTANCE"
+      xinit_config_load
+      xinit_cmd_watch "${ARGS[@]:1}" || exit $?
+      ;;
+    report | setup)
       xinit_instance_resolve "$OPT_INSTANCE"
       xinit_config_load
       xinit_die "'$cmd' is not implemented yet" "$XINIT_EXIT_UNKNOWN" ;;

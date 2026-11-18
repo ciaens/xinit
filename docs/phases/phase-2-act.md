@@ -23,7 +23,18 @@ What Phase 1 built or found, that this phase has to use:
 
 ## Tasks
 
-### 2.1 `xinit watch`
+### 2.1 `xinit watch` (done, as root; the path unit comes with 2.3)
+Reference: [../acting.md](../acting.md). What was decided while writing it:
+- one count of failed runs for the instance, not one per check;
+- an `unknown` leaves the count as it is; a `warn` is healthy;
+- once it has stopped restarting (`flapping`), only a healthy run makes it act again, even when
+  the restarts are older than the window;
+- a restart is stored in the state before it is done, and counts even when it fails;
+- `watch` exits 0 when it did its work, whatever the state of XWiki, so that its systemd service
+  does not fail every minute while XWiki is down;
+- a frozen JVM (`kill -STOP`) gives no thread dump: the signal stays pending. The thread dump is
+  tested on a JVM that runs but serves an error page.
+
 - `flock` on `/run/xinit/<instance>/lock` (done: `xinit_lock_acquire`). Each instance has its own
   runtime directory, which fits `RuntimeDirectory=xinit/%i`: stopping one instance's service
   cannot remove another's files.

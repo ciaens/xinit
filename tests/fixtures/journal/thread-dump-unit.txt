@@ -1,0 +1,37 @@
+2026-11-18 14:28:24
+Full thread dump OpenJDK 64-Bit Server VM (21.0.13+9-1-deb13u2-Debian mixed mode, sharing)
+                 JDK version: OpenJDK Runtime Environment (21.0.13+9) (build 21.0.13+9-1-deb13u2-Debian)
+Threads class SMR info:
+_java_thread_list=0x00007fce884f4d20, length=88, elements={
+0x00007fcf2c01b850, 0x00007fcf2c1485e0, 0x00007fcf2c149b60, 0x00007fcf2c14b300,
+0x00007fcf2c14c950, 0x00007fcf2c14df00, 0x00007fcf2c14fa50, 0x00007fcf2c151120,
+0x00007fcf2c1e0e50, 0x00007fcf2c1e37b0, 0x00007fcf2c267e50, 0x00007fcf2c54b080,
+0x00007fcf2fc4f580, 0x00007fcf2ff89eb0, 0x00007fce6c002620, 0x00007fce6c003b90,
+0x00007fce6c008810, 0x00007fce5c000f40, 0x00007fce64d55e00, 0x00007fce64d56ec0,
+0x00007fce64dd0c60, 0x00007fce64dd2010, 0x00007fce64dd63a0, 0x00007fce64dda620,
+0x00007fce64e8dee0, 0x00007fce4c96d580, 0x00007fce4c96e4c0, 0x00007fce643752d0,
+0x00007fcf2e8c9680, 0x00007fcf2e8c4d10, 0x00007fcf2e839de0, 0x00007fce642c3b80,
+0x00007fce642bbf50, 0x00007fce642c2b00, 0x00007fce90010750, 0x00007fcf2ec36400,
+0x00007fcea4003e70, 0x00007fcf2c6d1620, 0x00007fcf2c6d2760, 0x00007fcf2c6cb690,
+0x00007fcf2c6cc880, 0x00007fcf2c6cdab0, 0x00007fcf2c6cefc0, 0x00007fcf2c6d37e0,
+0x00007fcf2c6d4ac0, 0x00007fcf2c6d6870, 0x00007fcf2c6d9ff0, 0x00007fcf2c6e6230,
+0x00007fcf2c6dd390, 0x00007fce4ce81470, 0x00007fce4d4f8cd0, 0x00007fce7c048190,
+0x00007fce7c047390, 0x00007fce7c04c630, 0x00007fce7c04d9f0, 0x00007fce7c04edb0,
+0x00007fce7c050180, 0x00007fce7c051550, 0x00007fce7c052930, 0x00007fce7c053d10,
+0x00007fce7c055100, 0x00007fce7c06f910, 0x00007fce7c0dbaa0, 0x00007fce7c0dc960,
+0x00007fcef801df70, 0x00007fcef402fa00, 0x00007fce4c4ddc80, 0x00007fcf0807ee70,
+0x00007fce60007a60, 0x00007fce4c12bd60, 0x00007fce4d7496b0, 0x000056358e11fd90,
+0x000056358e11e790, 0x000056358e127960, 0x000056358e128c60, 0x00007fce4d770480,
+[... threads left out ...]
+"VM Periodic Task Thread" os_prio=0 cpu=41.86ms elapsed=53.85s tid=0x00007fcf2c12b650 nid=159 waiting on condition
+"G1 Service" os_prio=0 cpu=15.33ms elapsed=53.86s tid=0x00007fcf2c119a50 nid=148 runnable
+"G1 Refine#0" os_prio=0 cpu=101.00ms elapsed=53.87s tid=0x00007fcf2c118b50 nid=147 runnable
+"G1 Conc#0" os_prio=0 cpu=2045.37ms elapsed=53.87s tid=0x00007fcf2c094f80 nid=146 runnable
+"G1 Main Marker" os_prio=0 cpu=7.11ms elapsed=53.87s tid=0x00007fcf2c0941a0 nid=145 runnable
+"GC Thread#0" os_prio=0 cpu=686.11ms elapsed=53.87s tid=0x00007fcf2c083210 nid=144 runnable
+JNI global refs: 31, weak refs: 0
+Heap
+ garbage-first heap   total 608256K, used 371374K [0x0000000704a00000, 0x0000000800000000)
+  region size 2048K, 26 young (53248K), 9 survivors (18432K)
+ Metaspace       used 191375K, committed 192768K, reserved 1245184K
+  class space    used 23869K, committed 24512K, reserved 1048576K

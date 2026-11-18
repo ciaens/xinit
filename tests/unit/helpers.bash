@@ -51,6 +51,8 @@ calls() { cat "$FAKEBIN/$1.calls" 2>/dev/null || true; }
 #       FAKE_JOURNAL_DENIED=1        journalctl answers as to a user who may not read the journal
 #       FAKE_DB_TCP=refused|timeout|dns   the database port does not accept connections
 #       FAKE_DB_LOGIN_ERROR=<message>     psql and mariadb fail with this message
+#       FAKE_RESTART_ERROR=<message>      systemctl restart fails with this message
+#   - kill and sleep are fakes that do nothing: no real process gets a signal, no test waits.
 use_fixture() {
   local variant="$1" pid _ppid _user comm
   XINIT_ROOT="$BATS_TEST_TMPDIR/root"
@@ -68,6 +70,10 @@ use_fixture() {
   fake dpkg-query 'cat "$XINIT_ROOT/cmd/dpkg-query.txt"'
   # systemctl show -p <property> --value <unit>
   fake systemctl '
+    if [ "$1" = restart ]; then
+      [ -z "${FAKE_RESTART_ERROR:-}" ] || { echo "$FAKE_RESTART_ERROR" >&2; exit 1; }
+      exit 0
+    fi
     [ "$1" = show ] || exit 1
     shift
     property="" unit=""
@@ -159,6 +165,9 @@ use_fixture() {
       timeout) exit 124 ;;
     esac'
 
+  fake kill ''
+  fake sleep ''
+
   # The database clients: they answer 1 to SELECT 1, and record where the password came from.
   fake psql '
     echo "PGPASSFILE=${PGPASSFILE:-}" >>"$FAKEBIN/psql.env"
@@ -176,8 +185,9 @@ use_other_fixture() {
   use_fixture "$1"
 }
 
-# use_state: give xinit an empty configuration, state and runtime directories of its own, a fixed
-# clock ($NOW), and a fake logger. For the commands that need no XWiki installation.
+# use_state: give xinit state and runtime directories of its own, a fixed clock ($NOW), and a fake
+# logger. Alone, for the commands that need no XWiki installation: the configuration is then
+# empty. After use_fixture, for the commands that write.
 use_state() {
   XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc-xinit"
   XINIT_STATE_DIR="$BATS_TEST_TMPDIR/state"

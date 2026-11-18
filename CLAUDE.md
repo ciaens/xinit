@@ -16,10 +16,11 @@ hardening.
   - `TESTING.md` is the test procedure and the scenario catalogue;
   - `test-env.md` describes the test images;
   - `checks.md` is the reference of `xinit layout` and `xinit check`;
-  - `acting.md` is the reference of `xinit maint`, and of the state and lock of an instance.
+  - `acting.md` is the reference of `xinit watch` and `xinit maint`, and of the state and lock of
+    an instance.
 
-What exists: `xinit layout` and `xinit check` (Phase 1), which only read, and `xinit maint`
-(Phase 2). `watch`, `report` and `setup` are not implemented yet.
+What exists: `xinit layout` and `xinit check` (Phase 1), which only read, and `xinit maint` and
+`xinit watch` (Phase 2). `report` and `setup` are not implemented yet.
 
 Load the XWiki plugin from https://github.com/xwiki/xwiki-dev-llm (clone it, then
 `claude plugin marketplace add <clone>` and `claude plugin install xwiki@xwiki-dev-llm`). It holds
@@ -73,6 +74,8 @@ tests/fixtures/collect.sh                       # rebuild tests/fixtures/ from t
     there runs again as that user (`xinit_state_become_owner`). A state file is written with
     `xinit_state_write` and read with `xinit_state_read`, never sourced.
   - The time comes from `xinit_now`, so that tests can set it with `XINIT_TEST_NOW`.
+  - `kill` is a bash builtin, which a unit test cannot replace: send signals with `xinit_signal`.
+    A unit test must never signal a real process: the PIDs of the fixtures are not ours.
 - **Configuration keys**: `etc/xinit.conf.example` is their reference. A unit test fails when it
   does not list every key with its real default.
 - **Tests**: assert on xinit's machine output (`--format json`, exit codes), never on human-readable
@@ -94,6 +97,8 @@ These are verified on XWiki 18.9.0 / 17.10 with the Debian packages. The details
   `202` ("XWiki is initializing"), then `200`.
 - A fresh XWiki answers `302` to `…/bin/distribution/XWiki/Distribution` on page requests, but
   not on REST requests. The provisioned test images never show it.
+- A JVM stopped with `kill -STOP` gives no thread dump: `kill -3` stays pending. `systemctl
+  restart` still works on it, since systemd sends `SIGCONT` after `SIGTERM`.
 - `journalctl` exits 0 for a user who may not read the journal, and prints a notice instead.
 - `systemctl show -p ControlGroup` gives the path the kernel uses in its OOM messages, container
   prefix included.
