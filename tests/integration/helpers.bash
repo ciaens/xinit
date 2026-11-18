@@ -175,7 +175,9 @@ heal_small_heap() {
 # provoke_heap_oom [timeout]: fill the heap through the fault page, until the running JVM has
 # logged a java.lang.OutOfMemoryError.
 provoke_heap_oom() {
-  local end=$((SECONDS + ${1:-180})) count
+  # A JVM whose heap is nearly full collects garbage for a long time before it gives up,
+  # longer still on a busy host.
+  local end=$((SECONDS + ${1:-600})) count
   for _ in 1 2 3 4 5 6 7 8; do http_code "$(fault_url 'action=hog&mb=100')" >/dev/null; done
   while ((SECONDS < end)); do
     count="$(in_env_sh "journalctl -u $XT_UNIT --no-pager -o cat \
