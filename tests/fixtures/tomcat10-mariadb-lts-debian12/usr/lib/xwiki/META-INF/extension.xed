@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<extension>
+    <id>org.xwiki.platform:xwiki-platform-distribution-debian-common</id>
+    <version>17.10.14</version>
+    <type>deb</type>
+    <name>XWiki Debian</name>
+    <summary>XWiki common package</summary>
+    <!-- truncated by tests/fixtures/collect.sh -->
+</extension>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<extension>
+    <id>org.xwiki.platform:xwiki-platform-distribution-war</id>
+    <version>18.9.0</version>
+    <type>war</type>
+    <name>XWiki</name>
+    <summary>The XWiki WAR package. It contains everything needed to run XWiki in production and then choose a flavor.</summary>
+    <!-- truncated by tests/fixtures/collect.sh -->
+</extension>

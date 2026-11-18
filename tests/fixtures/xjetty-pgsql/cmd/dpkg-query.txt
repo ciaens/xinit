@@ -1,0 +1,9 @@
+xwiki		un 
+xwiki-common	18.9.0	ii 
+xwiki-database		un 
+xwiki-enterprise-common		un 
+xwiki-enterprise-database		un 
+xwiki-pgsql-common	18.9.0	ii 
+xwiki-xjetty-common	18.9.0	ii 
+xwiki-xjetty-database		un 
+xwiki-xjetty-pgsql	18.9.0	ii 

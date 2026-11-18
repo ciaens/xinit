@@ -1,0 +1,27 @@
+tomcat10	10.1.55-1~deb12u1	ii 
+tomcat10-admin		un 
+tomcat10-common	10.1.55-1~deb12u1	ii 
+tomcat10-docs		un 
+tomcat10-examples		un 
+tomcat10-user		un 
+xwiki		un 
+xwiki-common	17.10.14	ii 
+xwiki-database		un 
+xwiki-enterprise-common		un 
+xwiki-enterprise-database		un 
+xwiki-enterprise-tomcat-common		un 
+xwiki-enterprise-tomcat7-mysql		un 
+xwiki-enterprise-tomcat7-pgsql		un 
+xwiki-enterprise-tomcat8-mysql		un 
+xwiki-enterprise-tomcat8-pgsql		un 
+xwiki-mariadb-common	17.10.14	ii 
+xwiki-tomcat-common		un 
+xwiki-tomcat-database		un 
+xwiki-tomcat10-common	17.10.14	ii 
+xwiki-tomcat10-mariadb	17.10.14	ii 
+xwiki-tomcat7-mysql		un 
+xwiki-tomcat7-pgsql		un 
+xwiki-tomcat8-mariadb		un 
+xwiki-tomcat8-mysql		un 
+xwiki-tomcat8-pgsql		un 
+xwiki-tomcat9-pgsql		un 

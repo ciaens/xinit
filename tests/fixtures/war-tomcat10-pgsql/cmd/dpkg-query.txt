@@ -1,0 +1,6 @@
+tomcat10	10.1.55-1~deb13u1	ii 
+tomcat10-admin		un 
+tomcat10-common	10.1.55-1~deb13u1	ii 
+tomcat10-docs		un 
+tomcat10-examples		un 
+tomcat10-user		un 
