@@ -268,6 +268,16 @@ journal_reads() { calls journalctl | grep -v -- ' -n 0 '; }
   expect db crit refused
   FAKE_DB_LOGIN_ERROR="ERROR 2002 (HY000): Can't connect to server on 'localhost' (111)" check db
   expect db crit refused
+  # PostgreSQL still answers while it stops, or starts: what a CI run got.
+  FAKE_DB_LOGIN_ERROR='psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  the database system is shutting down' \
+    check db
+  expect db crit refused
+  FAKE_DB_LOGIN_ERROR="ERROR 1053 (08S01): Server shutdown in progress" check db
+  expect db crit refused
+  # A real refusal of this user stays one.
+  FAKE_DB_LOGIN_ERROR='psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "xwiki"' \
+    check db
+  expect db crit login-failed
 }
 
 @test "db: MariaDB is logged into with a defaults file, over TCP" {

@@ -151,5 +151,7 @@ installation. What failed, and what was done:
 An independent review of the code of this phase gave 14 findings, on robustness and on what a
 compromised `xinit` user could do: all are fixed, each with a test.
 
-Still to verify, once the workflows are on the default branch: `tomcat10-mysql-ubuntu2604`, and
-cgroup v2.
+The workflows then ran the suite on GitHub's runners (cgroup v2), with a sixth variant,
+`tomcat10-mysql-ubuntu2604`. The scenarios of this phase pass there on the six variants. S-PROC-04
+was added from what cgroup v2 showed: the unit of a package is left down after a kill by the
+kernel's OOM killer, and the drop-in of `xinit setup` makes systemd start it again.

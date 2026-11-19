@@ -152,9 +152,10 @@ xinit_check_db() {
       ;;
     *)
       # A database that stops between the test of its port and the login is down, not one that
-      # refuses this user.
+      # refuses this user. While it stops or starts, it still answers, to say so.
       case "$XINIT_DB_ERROR" in
-        *"Connection refused"* | *"Can't connect to"*)
+        *"Connection refused"* | *"Can't connect to"* | *"the database system is "* | \
+          *"Server shutdown in progress"*)
           xinit_result db crit refused "$where refuses connections: $XINIT_DB_ERROR"
           ;;
         *) xinit_result db crit login-failed "$where: login as $user or query on $name failed: $XINIT_DB_ERROR" ;;

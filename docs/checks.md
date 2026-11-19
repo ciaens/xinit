@@ -155,7 +155,7 @@ The database of `hibernate.cfg.xml` is reachable. xinit never uses the password 
 | ok | `ok` | a login and `SELECT 1` succeeded, with the credentials file |
 | ok | `port-only` | the port accepts connections, and the login is not checked: there is no credentials file, or no client for this database, or the database or user name has characters a client could misread |
 | ok | `embedded` | HSQLDB, H2 or Derby: nothing to reach |
-| crit | `refused`, `timeout`, `error` | the port does not accept connections, or refuses the one of the login |
+| crit | `refused`, `timeout`, `error` | the port does not accept connections, or the server refuses the one of the login because it is down, stopping or starting |
 | crit | `login-failed` | the login or the query failed |
 | unknown | `dns` | the host name does not resolve |
 | unknown | `no-db`, `bad-config` | the database is not known; `DB_TIMEOUT` or `DB_PORT` is not a number |
