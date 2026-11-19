@@ -24,6 +24,27 @@ What Phase 2 built, that this phase has to use ([../acting.md](../acting.md)):
   `-XX:+ExitOnOutOfMemoryError` turns a heap error into a crash, which systemd repairs and
   notifies at once: worth proposing through `JVM_OPTS_APPEND`.
 
+## Decisions
+
+Taken before the work started:
+- **Mail goes by SMTP, with `curl`**, to `MAIL_SMTP_URL` (default `smtp://localhost:25`), not
+  through `sendmail`. The periodic job runs with `NoNewPrivileges`, and the `sendmail` of postfix
+  and of exim needs setgid or setuid. `curl` is already required. A host without a listening
+  mail server names a relay.
+- **No `jcmd` in this phase**: thread dumps come from `kill -3` and the journal. The packages
+  bring a JRE, and `jcmd` has to run as the user of the JVM, which would take a third request to
+  root.
+- **The webhook URL is in a credentials file**, which `curl` reads itself: `xinit.conf` is
+  readable by everyone, and such a URL is a secret. It never goes on a command line.
+- **`xinit db sanity` moves to Phase 6**: the SQL integrity script of 1.3 has nothing to do with
+  diagnostics.
+- **XINIT-7: no logrotate snippet now.** The Debian packages log to the journal.
+- **The tests use stub SMTP and webhook listeners** in perl, inside the test container, as the
+  two-instance scenario does. No image is rebuilt.
+
+Order of work: `xinit report`; notifications by mail; webhook; Prometheus; then the changes to
+`xinit setup`, the docs, a review and the full runs.
+
 ## Tasks
 
 ### 3.1 `xinit report [--send] [--output FILE]`
