@@ -47,25 +47,26 @@ Order of work: `xinit report`; notifications by mail; webhook; Prometheus; then 
 
 ## Tasks
 
-### 3.1 `xinit report [--send] [--output FILE]`
-- The bundle is described in DESIGN §3.5. It is written mode 0600 into the state dir and rotated
-  with `REPORT_KEEP`.
-- Redaction: passwords in `hibernate.cfg.xml` and `xwiki.cfg` (`xwiki.authentication.*key`,
-  `xwiki.superadminpassword`), and system properties whose names match
-  `password|secret|token|key`.
-- Thread dumps: three dumps, `THREADDUMP_INTERVAL` apart. Add a summary of the most frequent
-  request URLs across `http-nio` threads (the 1.3 "most common pages" feature, made more robust),
-  and the hottest threads (from `top -H`, with the TID mapped to the hex `nid`).
-- OOM:
-  - Heap: `OutOfMemoryError` in the log or journal **since the last start**.
-  - Kernel: `journalctl -k --since <last start>` matched to this JVM's PID or cgroup.
-  - Either one adds a `[OOM]` prefix to the subject.
-- DB:
-  - PostgreSQL: `pg_stat_activity` (state, wait_event, query age; query text only if
-    `REPORT_DB_QUERIES=yes`) and DB size.
-  - MySQL/MariaDB: `SHOW FULL PROCESSLIST` and schema sizes.
-- Port and SQL the sanity checks (`share/xinit/sql/`), available through `xinit db sanity`.
-- DNS trace when the HTTP check failed on resolution (XINIT-5).
+### 3.1 `xinit report [--output FILE]` (done, without the sending)
+
+Built as [../reporting.md](../reporting.md) describes. What differs from the first plan:
+- **The threads that use the CPU come from the dumps**, not from `top -H`: HotSpot prints the CPU
+  time of each thread (`cpu=…ms`), and the difference between two dumps says the same, without
+  another tool nor the mapping of thread ids.
+- **XWiki's configuration files are not copied**, so there is nothing to redact in them: a
+  redaction by key name would miss secrets, and the archive leaves by mail. What is redacted: the
+  command line of the JVM, by option name, and the secrets xinit can read itself, wherever they
+  show.
+- **Run by root on a state that belongs to the user of the job, root builds the archive and that
+  user only stores it.** Running the whole command again as that user, as `xinit maint` does,
+  would lose the groups the job gets from its unit: it could not read the journal.
+- `xinit watch` builds the whole report before a restart, where it stored one thread dump: its
+  JSON has `report` in place of `thread_dump`.
+- The out-of-memory part is the `oom` check, whose result is in the report (`oom` in the JSON,
+  for the `[OOM]` prefix of a subject).
+- The DNS trace (XINIT-5) is `dns.txt`. Whether a host name that stops resolving is notified is
+  decided with the notifications.
+- `--send` comes with the notifications.
 
 ### 3.2 Notifications (`lib/xinit/notify/`)
 - `mail`: uses `sendmail -t` (works with postfix, exim, msmtp-mta, nullmailer). The body is a text

@@ -49,7 +49,7 @@ XINIT_WATCH_STUCK=1200
 # ESCALATED.
 declare -gA XINIT_WATCH_STATE=()
 # This run: ACTION (none, restart), REASON, FAILED (the failed checks, with their reasons),
-# FAILED_CHECKS (their names), COOLDOWN_LEFT, RESTART_OK, THREAD_DUMP.
+# FAILED_CHECKS (their names), COOLDOWN_LEFT, RESTART_OK, REPORT.
 declare -gA XINIT_WATCH=()
 
 # xinit_watch_state_file: print the path of the state file.
@@ -120,8 +120,8 @@ _xinit_watch_classify() {
 
 # _xinit_watch_json: print the "watch" member of the JSON output.
 _xinit_watch_json() {
-  local name sep="" dump=null ok=null
-  [ -z "${XINIT_WATCH[THREAD_DUMP]-}" ] || dump="$(xinit_json_string "${XINIT_WATCH[THREAD_DUMP]}")"
+  local name sep="" report=null ok=null
+  [ -z "${XINIT_WATCH[REPORT]-}" ] || report="$(xinit_json_string "${XINIT_WATCH[REPORT]}")"
   [ -z "${XINIT_WATCH[RESTART_OK]-}" ] || ok="${XINIT_WATCH[RESTART_OK]}"
   printf '"watch":{"action":"%s","reason":"%s","dry_run":%s,"failures":%s,"restart_after":%s,' \
     "${XINIT_WATCH[ACTION]}" "${XINIT_WATCH[REASON]}" "${XINIT_WATCH[DRY_RUN]}" \
@@ -133,7 +133,7 @@ _xinit_watch_json() {
   done
   printf '],"restarts":%s,"max_restarts":%s,"cooldown_remaining_seconds":%s,' \
     "${XINIT_WATCH[RESTARTS]:-0}" "${XINIT_WATCH[MAX_RESTARTS]:-0}" "${XINIT_WATCH[COOLDOWN_LEFT]:-0}"
-  printf '"restart_ok":%s,"thread_dump":%s}' "$ok" "$dump"
+  printf '"restart_ok":%s,"report":%s}' "$ok" "$report"
 }
 
 # _xinit_watch_print <format>: print the results of the checks, and what this run did.
@@ -253,6 +253,7 @@ xinit_cmd_watch() {
     xinit_die "COOLDOWN is not a duration: ${XINIT_CFG[COOLDOWN]-}"
   XINIT_WATCH[WINDOW]="$(xinit_duration_seconds "${XINIT_CFG[MAX_RESTARTS_WINDOW]-}")" ||
     xinit_die "MAX_RESTARTS_WINDOW is not a duration: ${XINIT_CFG[MAX_RESTARTS_WINDOW]-}"
+  xinit_report_config || xinit_die "${XINIT_REPORT[ERROR]}"
   for name in ${XINIT_CFG[ACT_ON]//,/ }; do
     acting+=("$name")
   done
@@ -318,12 +319,13 @@ xinit_cmd_watch() {
     xinit_notify flapping "${XINIT_WATCH[MESSAGE]}"
   fi
   if [ "${XINIT_WATCH[ACTION]}" = restart ]; then
-    # The thread dump first: it shows what hangs, and is gone with the JVM.
-    if xinit_thread_dump; then
-      XINIT_WATCH[THREAD_DUMP]="$XINIT_THREAD_DUMP_FILE"
-      xinit_log_journal "thread dump stored in $XINIT_THREAD_DUMP_FILE"
+    # The report first: its thread dumps show what hangs, and are gone with the JVM.
+    XINIT_REPORT[CAUSE]="${XINIT_WATCH[MESSAGE]}"
+    if xinit_report_build; then
+      XINIT_WATCH[REPORT]="${XINIT_REPORT[FILE]}"
+      xinit_log_journal "report stored in ${XINIT_REPORT[FILE]}"
     else
-      xinit_log_journal "no thread dump: $XINIT_ACT_ERROR"
+      xinit_log_journal "no report: ${XINIT_REPORT[ERROR]}"
     fi
     xinit_notify restart "${XINIT_WATCH[MESSAGE]}"
     if xinit_act_restart; then

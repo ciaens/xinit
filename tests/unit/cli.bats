@@ -23,13 +23,6 @@ load helpers
   [[ "$output" == *"unknown command: no-such-command"* ]]
 }
 
-@test "cli: a command that is not implemented yet exits unknown (3)" {
-  export XINIT_CONF_DIR="$BATS_TEST_TMPDIR/etc"
-  run "$XINIT" report
-  [ "$status" -eq 3 ]
-  [[ "$output" == *"not implemented yet"* ]]
-}
-
 @test "cli: works through a symlink, as when installed with one" {
   ln -s "$XINIT" "$BATS_TEST_TMPDIR/xinit"
   run "$BATS_TEST_TMPDIR/xinit" version

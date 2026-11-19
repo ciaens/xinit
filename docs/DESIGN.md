@@ -144,8 +144,8 @@ and metrics of the implemented checks are in [checks.md](checks.md).
 4. If a check that counts has been `crit` for `RESTART_AFTER` consecutive runs (default 3), and
    there is no maintenance and no cooldown, it does:
    1. remember the restart, so that a run that dies halfway does not restart again and again;
-   2. take a thread dump **before** restarting, since it must be taken while XWiki hangs (the
-      full diagnostics report comes with Phase 3);
+   2. build a report **before** restarting, since its thread dumps must be taken while XWiki
+      hangs;
    3. send a notification;
    4. `systemctl restart <UNIT>` (or `RESTART_CMD`);
    5. enter `COOLDOWN` (default 15 min, the old `MAINTENANCE_TIME`).
@@ -167,20 +167,26 @@ unit's start.
 
 ### 3.5 Diagnostics report
 
-`xinit report [--send]` writes `/var/lib/xinit/<instance>/reports/<ts>.tar.gz`. The file is mode
-0600, and only the last `REPORT_KEEP` reports are kept. It contains:
-- layout and config summary, with secrets redacted;
-- check results;
-- thread dumps, 3 times, 5 s apart: `jcmd Thread.print -l` when available, otherwise `kill -3`
-  plus the journal or log; with `jcmd`, also `GC.heap_info`, `VM.flags` and `VM.system_properties`
-  with secrets redacted;
-- the last N lines of the journal / log;
-- `ss -tanp` summary per port;
-- DB activity (`pg_stat_activity` / `SHOW FULL PROCESSLIST`), with query text optional;
-- disk usage;
-- top threads by CPU (`top -H -p`, mapped to the thread dump's `nid`).
+`xinit report` writes `/var/lib/xinit/<instance>/reports/report-<time>.tar.gz`, or the file of
+`--output`. The file is mode 0600, and only the last `REPORT_KEEP` reports are kept. `xinit watch`
+builds one before a restart. It contains:
+- the layout, and the configuration of xinit;
+- the check results;
+- thread dumps, 3 times, 5 s apart, with `kill -3` and the journal (`jcmd` is not used: the
+  packages bring a JRE);
+- the last lines of the journal;
+- the sockets (`ss -tan`), counted per port;
+- the activity of the database (`pg_stat_activity` / `SHOW FULL PROCESSLIST`), with the query
+  text optional;
+- disk usage, and the load and memory of the host;
+- the JVM's command line, with the values that look like secrets replaced.
 
-A mail carries a text summary (wrapped lines) plus the bundle when it is small enough. Webhooks
+The summary names a deadlock, the URLs most request threads are on, and the threads that used
+the most CPU between two dumps, from the `cpu=` time HotSpot prints for each thread. XWiki's own
+configuration files are not copied, and the secrets xinit can read are replaced wherever they
+show. The reference is [reporting.md](reporting.md).
+
+A mail carries the summary (wrapped lines) plus the archive when it is small enough. Webhooks
 carry the summary only.
 
 ### 3.6 systemd integration (`xinit setup`)

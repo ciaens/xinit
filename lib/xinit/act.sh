@@ -20,15 +20,13 @@
 # Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
 # 02110-1301 USA, or see the FSF site: http://www.fsf.org.
 # ---------------------------------------------------------------------------
-# `xinit check`: run the read-only checks on one instance. Sourced, never executed.
 # What xinit does to a running XWiki: a thread dump, and a restart. Sourced, never executed.
 
-# Where the last thread dump was stored, by xinit_thread_dump.
-XINIT_THREAD_DUMP_FILE=""
+# What the JVM wrote for the last xinit_thread_dumps, and how many dumps that holds.
+XINIT_THREAD_DUMPS_TEXT=""
+XINIT_THREAD_DUMPS_COUNT=0
 # What the restart command said when it failed, for xinit_act_restart.
 XINIT_ACT_ERROR=""
-# How many thread dumps are kept.
-XINIT_THREAD_DUMPS_KEPT=5
 
 # The command that restarts XWiki, when it is not `systemctl restart <UNIT>`. It is split on
 # spaces and run as is, without a shell.
@@ -141,12 +139,14 @@ xinit_act_restart() {
   return 1
 }
 
-# xinit_thread_dump: store a thread dump of the JVM in the state directory, and set
-# XINIT_THREAD_DUMP_FILE. The JVM of the packages has no jcmd: it is asked with a signal, and
-# answers in the journal. Returns 1 when there is no dump, with the reason in XINIT_ACT_ERROR.
-xinit_thread_dump() {
-  local source="${XINIT_LAYOUT[LOG_SOURCE]-}" dir since try seen=0 tmp file old files=()
-  XINIT_THREAD_DUMP_FILE=""
+# xinit_thread_dumps <count> <seconds between two>: ask the JVM for thread dumps, and read them
+# into XINIT_THREAD_DUMPS_TEXT, with their number in XINIT_THREAD_DUMPS_COUNT. The JVM of the
+# packages has no jcmd: it is asked with a signal, and answers in the journal. Returns 1 when
+# there is no dump, with the reason in XINIT_ACT_ERROR.
+xinit_thread_dumps() {
+  local count="$1" interval="$2" source="${XINIT_LAYOUT[LOG_SOURCE]-}" since try shown got=0
+  XINIT_THREAD_DUMPS_TEXT=""
+  XINIT_THREAD_DUMPS_COUNT=0
   XINIT_ACT_ERROR=""
   if [ -z "${XINIT_LAYOUT[JVM_PID]-}" ]; then
     XINIT_ACT_ERROR="no JVM is running"
@@ -158,44 +158,40 @@ xinit_thread_dump() {
   fi
   # The real time, also in a test that sets the clock: the journal has no other.
   since="$EPOCHSECONDS"
-  if ! xinit_act_thread_dump_signal; then
-    XINIT_ACT_ERROR="the JVM could not be sent a signal${XINIT_ACT_ERROR:+: $XINIT_ACT_ERROR}"
-    return 1
-  fi
-  # The dump takes a moment to be written: once it shows, leave it one more second to end.
-  for try in 1 2 3 4 5 6 7 8 9 10; do
-    sleep 1
-    if ! _xinit_journal -u "${source#journal:}" --since "@$since"; then
-      XINIT_ACT_ERROR="the journal cannot be read: $XINIT_JOURNAL_ERROR"
-      return 1
+  while [ "$got" -lt "$count" ]; do
+    [ "$got" -eq 0 ] || sleep "$interval"
+    if ! xinit_act_thread_dump_signal; then
+      XINIT_ACT_ERROR="the JVM could not be sent a signal${XINIT_ACT_ERROR:+: $XINIT_ACT_ERROR}"
+      break
     fi
-    [ "$seen" -eq 0 ] || break
-    case "$XINIT_JOURNAL_OUTPUT" in *"Full thread dump"*) seen="$try" ;; esac
+    # A dump takes a moment to be written. A JVM that does not write one will not write the
+    # next either: it is not asked again.
+    shown=0
+    for try in 1 2 3 4 5 6 7 8 9 10; do
+      sleep 1
+      if ! _xinit_journal -u "${source#journal:}" --since "@$since"; then
+        XINIT_ACT_ERROR="the journal cannot be read: $XINIT_JOURNAL_ERROR"
+        return 1
+      fi
+      shown="$(printf '%s\n' "$XINIT_JOURNAL_OUTPUT" | grep -c '^Full thread dump ')" || shown=0
+      [ "$shown" -le "$got" ] || break
+    done
+    if [ "$shown" -le "$got" ]; then
+      XINIT_ACT_ERROR="the JVM wrote no thread dump"
+      break
+    fi
+    got=$((got + 1))
   done
-  if [ "$seen" -eq 0 ]; then
-    XINIT_ACT_ERROR="the JVM wrote no thread dump"
+  [ "$got" -gt 0 ] || return 1
+  # The last one shows: leave it one more second to end.
+  sleep 1
+  if ! _xinit_journal -u "${source#journal:}" --since "@$since"; then
+    XINIT_ACT_ERROR="the journal cannot be read: $XINIT_JOURNAL_ERROR"
     return 1
   fi
-  dir="$(xinit_state_dir)"
-  file="$dir/threaddump-$(printf '%(%Y%m%dT%H%M%S)T' "$(xinit_now)").txt"
-  if ! xinit_dir_ensure "$dir" || ! tmp="$(mktemp -- "$file.XXXXXX" 2>/dev/null)"; then
-    XINIT_ACT_ERROR="cannot write in $dir"
-    return 1
-  fi
-  if ! printf '%s\n' "$XINIT_JOURNAL_OUTPUT" >"$tmp" || ! mv -f -- "$tmp" "$file"; then
-    rm -f -- "$tmp"
-    XINIT_ACT_ERROR="cannot write $file"
-    return 1
-  fi
-  XINIT_THREAD_DUMP_FILE="$file"
-  # Keep the last ones: their names sort by time.
-  for old in "$dir"/threaddump-*.txt; do
-    [ -f "$old" ] && files+=("$old")
-  done
-  while [ "${#files[@]}" -gt "$XINIT_THREAD_DUMPS_KEPT" ]; do
-    rm -f -- "${files[0]}"
-    files=("${files[@]:1}")
-  done
+  XINIT_THREAD_DUMPS_TEXT="$XINIT_JOURNAL_OUTPUT"
+  XINIT_THREAD_DUMPS_COUNT="$got"
+  XINIT_ACT_ERROR=""
   return 0
 }
 

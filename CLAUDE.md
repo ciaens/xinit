@@ -17,11 +17,13 @@ hardening.
   - `test-env.md` describes the test images;
   - `checks.md` is the reference of `xinit layout` and `xinit check`;
   - `acting.md` is the reference of `xinit setup`, `xinit watch` and `xinit maint`, and of the
-    state and lock of an instance.
+    state and lock of an instance;
+  - `reporting.md` is the reference of `xinit report`.
 
-What exists: `xinit layout` and `xinit check` (Phase 1), which only read, and `xinit maint`,
+What exists: `xinit layout` and `xinit check` (Phase 1), which only read, `xinit maint`,
 `xinit watch` and `xinit setup` (Phase 2), with the commands the installed units run (`act`,
-`notify`, `warmup`). `report` is not implemented yet.
+`notify`, `warmup`), and `xinit report` (Phase 3, in progress: notifications are still lines in
+the system log).
 
 Load the XWiki plugin from https://github.com/xwiki/xwiki-dev-llm (clone it, then
 `claude plugin marketplace add <clone>` and `claude plugin install xwiki@xwiki-dev-llm`). It holds
@@ -79,6 +81,10 @@ tests/fixtures/collect.sh                       # rebuild tests/fixtures/ from t
     characters are removed before it is shown.
   - A command that runs as another user gets no terminal and none of root's environment
     (`xinit_state_become_owner`).
+  - A function that `xinit watch` calls returns an error, with its reason in a variable: it
+    never ends xinit itself (`xinit_report_build`).
+  - A temporary file or directory is created with `mktemp`, for its owner only, and removed when
+    the command ends, also when it fails.
   - The time comes from `xinit_now`, so that tests can set it with `XINIT_TEST_NOW`.
   - `kill` is a bash builtin, which a unit test cannot replace: send signals with `xinit_signal`.
     A unit test must never signal a real process: the PIDs of the fixtures are not ours.
@@ -105,6 +111,11 @@ These are verified on XWiki 18.9.0 / 17.10 with the Debian packages. The details
   `202` ("XWiki is initializing"), then `200`.
 - A fresh XWiki answers `302` to `…/bin/distribution/XWiki/Distribution` on page requests, but
   not on REST requests. The provisioned test images never show it.
+- The journal read with `-o cat` has no empty line: in a thread dump, nothing separates two
+  threads but the `"name"` line of the next. XWiki names a request thread `<name> - <URL>`, and
+  HotSpot prints `cpu=…ms` and `nid=` for each thread.
+- `awk` is mawk on Debian 13 and Ubuntu, gawk on Debian 12: `lib/xinit/threads.awk` and the awk
+  programs in `lib/` use what both have (no `{n}` in a regular expression, no `asort`).
 - A JVM stopped with `kill -STOP` gives no thread dump: `kill -3` stays pending. `systemctl
   restart` still works on it, since systemd sends `SIGCONT` after `SIGTERM`.
 - `OnFailure=` does not fire for a crash that `Restart=` repairs: the unit only enters the failed

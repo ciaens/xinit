@@ -14,6 +14,8 @@
   [`../etc/xinit.conf.example`](../etc/xinit.conf.example).
 - [acting.md](acting.md): reference of `xinit setup` (the systemd units), `xinit watch` (the
   restart policy) and `xinit maint`, and of the state and lock of an instance.
+- [reporting.md](reporting.md): reference of `xinit report`: what the diagnostics archive holds,
+  what its summary says of the thread dumps, and how secrets are kept out.
 - [../CLAUDE.md](../CLAUDE.md): working rules for agents (commands, conventions, pitfalls).
 - [test-env.md](test-env.md): disposable, pre-provisioned XWiki instances for tests.
 - [TESTING.md](TESTING.md): how to run the tests (`tests/run.sh`), the agent procedure, the fault

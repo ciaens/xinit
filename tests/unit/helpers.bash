@@ -51,6 +51,7 @@ calls() { cat "$FAKEBIN/$1.calls" 2>/dev/null || true; }
 #       FAKE_JOURNAL_DENIED=1        journalctl answers as to a user who may not read the journal
 #       FAKE_DB_TCP=refused|timeout|dns   the database port does not accept connections
 #       FAKE_DB_LOGIN_ERROR=<message>     psql and mariadb fail with this message
+#   - ss lists the sockets of a host that runs Tomcat and PostgreSQL, and getent finds no host;
 #       FAKE_RESTART_ERROR=<message>      systemctl restart fails with this message
 #       FAKE_ACT_STATE=<state>            the ActiveState of the unit that acts for the job
 #   - kill and sleep are fakes that do nothing: no real process gets a signal, no test waits.
@@ -171,12 +172,29 @@ use_fixture() {
     esac'
 
   # timeout <seconds> bash -c <open a TCP connection> _ <host> <port>: the database port probe.
+  # timeout <seconds> <any other command>: that command.
   fake timeout '
+    if [ "$2" != bash ]; then
+      shift
+      exec "$@"
+    fi
     case "${FAKE_DB_TCP:-}" in
       refused) echo "bash: connect: Connection refused" >&2; exit 1 ;;
       dns) echo "bash: line 1: db.invalid: Name or service not known" >&2; exit 1 ;;
       timeout) exit 124 ;;
     esac'
+
+  # ss -H -t -a -n: the TCP sockets of a host that runs Tomcat and PostgreSQL.
+  fake ss '
+    echo "LISTEN 0      100                     *:8080             *:*"
+    echo "LISTEN 3      200             127.0.0.1:5432       0.0.0.0:*"
+    echo "ESTAB  0      0      [::ffff:127.0.0.1]:8080 [::ffff:127.0.0.1]:51000"
+    echo "ESTAB  0      0      [::ffff:127.0.0.1]:8080 [::ffff:127.0.0.1]:51002"
+    echo "CLOSE-WAIT 1  0      [::ffff:127.0.0.1]:8080 [::ffff:127.0.0.1]:51004"
+    echo "ESTAB  0      0               127.0.0.1:40000    127.0.0.1:5432"
+    echo "ESTAB  0      0               127.0.0.1:5432     127.0.0.1:40000"'
+  # getent ahosts <host>
+  fake getent 'exit 2'
 
   fake kill ''
   # Time passes: with FAKE_ACT=1, root answers the requests of a job that is not root.

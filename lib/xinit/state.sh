@@ -122,33 +122,56 @@ xinit_state_is_mine() {
   [ "$uid" = 0 ]
 }
 
-# xinit_state_become_owner: root never writes in a directory that belongs to another user. When
-# STATE_DIR does, as it does once the periodic job runs as its own user, run this xinit command
-# again as that user. What it writes is then also readable by the periodic job.
-xinit_state_become_owner() {
-  local top="${XINIT_CFG[STATE_DIR]-}" owner uid gid name output rc=0 environment=()
-  [ "$(id -u)" = 0 ] || return 0
-  [ -d "$top" ] || return 0
-  owner="$(stat -c '%u:%g' -- "$top" 2>/dev/null)" || return 0
+# XINIT_STATE_OWNER: the user and the group STATE_DIR belongs to, for xinit_state_owner.
+XINIT_STATE_OWNER_UID=""
+XINIT_STATE_OWNER_GID=""
+
+# xinit_state_owner: this is root, and STATE_DIR belongs to another user, as it does once the
+# periodic job runs as its own user: set XINIT_STATE_OWNER_UID and _GID. Returns 1 otherwise.
+xinit_state_owner() {
+  local top="${XINIT_CFG[STATE_DIR]-}" owner uid gid
+  [ "$(id -u)" = 0 ] || return 1
+  [ -d "$top" ] || return 1
+  owner="$(stat -c '%u:%g' -- "$top" 2>/dev/null)" || return 1
   uid="${owner%%:*}"
   gid="${owner#*:}"
-  [[ "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ ]] || return 0
-  [ "$uid" != 0 ] || return 0
+  [[ "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ ]] || return 1
+  [ "$uid" != 0 ] || return 1
+  XINIT_STATE_OWNER_UID="$uid"
+  XINIT_STATE_OWNER_GID="$gid"
+}
+
+# xinit_state_run_as_owner <input file> <xinit argument>...: run xinit as the owner of STATE_DIR,
+# after xinit_state_owner. Prints what it prints, and returns its status.
+xinit_state_run_as_owner() {
+  local top="${XINIT_CFG[STATE_DIR]-}" input="$1" name output rc=0 environment=()
+  shift
   command -v setpriv >/dev/null ||
-    xinit_die "$top belongs to user $uid: setpriv (util-linux) is needed to write there as root"
+    xinit_die "$top belongs to user $XINIT_STATE_OWNER_UID: setpriv (util-linux) is needed to write there as root"
   command -v setsid >/dev/null || xinit_die "setsid (util-linux) is needed to write in $top as root"
   # Who asked, before it reads as the owner of the directory.
   XINIT_INVOKER="$(xinit_invoker)"
   export XINIT_INVOKER
-  # That user gets nothing of root's: a session of its own, so no terminal; no input; and of the
-  # environment only what configures xinit.
+  # That user gets nothing of root's: a session of its own, so no terminal; no input but the
+  # file; and of the environment only what configures xinit.
   environment=("PATH=$PATH")
   while IFS= read -r name; do
     case "$name" in XINIT_* | LANG | LC_ALL | TZ) environment+=("$name=${!name}") ;; esac
   done < <(compgen -e)
-  output="$(env -i "${environment[@]}" setsid --wait setpriv --reuid="$uid" --regid="$gid" \
-    --clear-groups -- "$XINIT_SELF" "${XINIT_ARGV[@]}" </dev/null 2> >(cat >&2))" || rc=$?
+  output="$(env -i "${environment[@]}" setsid --wait setpriv --reuid="$XINIT_STATE_OWNER_UID" \
+    --regid="$XINIT_STATE_OWNER_GID" --clear-groups -- "$XINIT_SELF" "$@" <"$input" \
+    2> >(cat >&2))" || rc=$?
   [ -z "$output" ] || printf '%s\n' "$output"
+  return "$rc"
+}
+
+# xinit_state_become_owner: root never writes in a directory that belongs to another user. When
+# STATE_DIR does, run this xinit command again as that user. What it writes is then also readable
+# by the periodic job.
+xinit_state_become_owner() {
+  local rc=0
+  xinit_state_owner || return 0
+  xinit_state_run_as_owner /dev/null "${XINIT_ARGV[@]}" || rc=$?
   exit "$rc"
 }
 

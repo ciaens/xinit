@@ -53,31 +53,77 @@ _xinit_tcp_probe() {
   return 1
 }
 
+# How long a database client may run, in seconds: the timeout command then ends it. Empty: as
+# long as it takes.
+XINIT_DB_CLIENT_LIMIT=""
+
+# _xinit_db_client <type> <host> <port> <name> <user> <credentials file> <timeout> <value|table>
+#   <SQL>...: log in and run the statements. Prints what the client says, its errors included:
+# bare values, or tables with their headers. Returns the status of the client, or 127 when there
+# is no client for this type of database.
+_xinit_db_client() {
+  local type="$1" host="$2" port="$3" name="$4" user="$5" credentials="$6" timeout="$7"
+  local shape="$8" client sql joined="" args=() limit=()
+  shift 8
+  host="${host#[}"
+  host="${host%]}"
+  [ -z "$XINIT_DB_CLIENT_LIMIT" ] || limit=(timeout "$XINIT_DB_CLIENT_LIMIT")
+  case "$type" in
+    postgresql)
+      command -v psql >/dev/null 2>&1 || return 127
+      if [ "$shape" = value ]; then
+        args=(-At)
+      else
+        args=(-A -F ' | ' --pset footer=off)
+      fi
+      args+=(-h "$host" -p "$port" -U "$user" -d "$name")
+      for sql in "$@"; do
+        args+=(-c "$sql")
+      done
+      PGPASSFILE="$credentials" PGCONNECT_TIMEOUT="$timeout" \
+        "${limit[@]}" psql -X -w "${args[@]}" 2>&1
+      ;;
+    mysql | mariadb)
+      client="$(command -v mariadb || command -v mysql)" || return 127
+      [ "$shape" = value ] && args=(-N)
+      for sql in "$@"; do
+        joined+="${joined:+; }$sql"
+      done
+      # --defaults-file has to be the first option. With it, no other option file is read: a
+      # password in the user's own ~/.my.cnf does not replace this one.
+      "${limit[@]}" "$client" --defaults-file="$credentials" --protocol=tcp -h "$host" \
+        -P "$port" -u "$user" --connect-timeout="$timeout" "${args[@]}" -B -e "$joined" "$name" 2>&1
+      ;;
+    *) return 127 ;;
+  esac
+}
+
+# _xinit_db_credentials: print the credentials file of the database of this instance: the one of
+# DB_CREDENTIALS, else the one `xinit setup` writes.
+_xinit_db_credentials() {
+  local credentials="${XINIT_CFG[DB_CREDENTIALS]-}" suffix
+  if [ -z "$credentials" ]; then
+    case "${XINIT_LAYOUT[DB_TYPE]-}" in
+      postgresql) suffix=pgpass ;;
+      *) suffix=my.cnf ;;
+    esac
+    credentials="${XINIT_CONF_DIR:-/etc/xinit}/credentials/$XINIT_INSTANCE.$suffix"
+  fi
+  printf '%s\n' "$credentials"
+}
+
+# What a database or user name is made of. Anything else is not passed to a client, where a
+# leading - or a = would change the meaning of the argument.
+XINIT_DB_RE_NAME='^[A-Za-z0-9_][A-Za-z0-9_.$-]*$'
+
 # _xinit_db_query <type> <host> <port> <name> <user> <credentials file> <timeout>: log in and run
 # SELECT 1. Returns 0 when it answers 1; else 1 with the client's message in XINIT_DB_ERROR.
 # Returns 2 when there is no client for this type of database.
 _xinit_db_query() {
-  local type="$1" host="$2" port="$3" name="$4" user="$5" credentials="$6" timeout="$7"
-  local client output rc=0
+  local output rc=0
   XINIT_DB_ERROR=""
-  host="${host#[}"
-  host="${host%]}"
-  case "$type" in
-    postgresql)
-      command -v psql >/dev/null 2>&1 || return 2
-      output="$(PGPASSFILE="$credentials" PGCONNECT_TIMEOUT="$timeout" \
-        psql -X -w -At -h "$host" -p "$port" -U "$user" -d "$name" -c 'SELECT 1' 2>&1)" || rc=$?
-      ;;
-    mysql | mariadb)
-      client="$(command -v mariadb || command -v mysql)" || return 2
-      # --defaults-file has to be the first option. With it, no other option file is read: a
-      # password in the user's own ~/.my.cnf does not replace this one.
-      output="$("$client" --defaults-file="$credentials" --protocol=tcp -h "$host" \
-        -P "$port" -u "$user" --connect-timeout="$timeout" -N -B -e 'SELECT 1' "$name" 2>&1)" ||
-        rc=$?
-      ;;
-    *) return 2 ;;
-  esac
+  output="$(_xinit_db_client "$@" value 'SELECT 1')" || rc=$?
+  [ "$rc" -ne 127 ] || return 2
   if [ "$rc" -eq 0 ] && [ "$output" = 1 ]; then
     return 0
   fi
@@ -89,10 +135,8 @@ xinit_check_db() {
   local type="${XINIT_LAYOUT[DB_TYPE]-}" host="${XINIT_LAYOUT[DB_HOST]-}"
   local port="${XINIT_LAYOUT[DB_PORT]-}" name="${XINIT_LAYOUT[DB_NAME]-}"
   local user="${XINIT_LAYOUT[DB_USER]-}" timeout
-  local credentials="${XINIT_CFG[DB_CREDENTIALS]-}" where rc=0 suffix
-  # What a database or user name is made of. Anything else is not passed to a client, where a
-  # leading - or a = would change the meaning of the argument.
-  local re_name='^[A-Za-z0-9_][A-Za-z0-9_.$-]*$'
+  local credentials where rc=0
+  local re_name="$XINIT_DB_RE_NAME"
   if ! timeout="$(xinit_config_number DB_TIMEOUT)"; then
     xinit_result db unknown bad-config "DB_TIMEOUT must be a number of seconds"
     return 0
@@ -126,13 +170,7 @@ xinit_check_db() {
     esac
     return 0
   fi
-  if [ -z "$credentials" ]; then
-    case "$type" in
-      postgresql) suffix=pgpass ;;
-      *) suffix=my.cnf ;;
-    esac
-    credentials="${XINIT_CONF_DIR:-/etc/xinit}/credentials/$XINIT_INSTANCE.$suffix"
-  fi
+  credentials="$(_xinit_db_credentials)"
   if [ ! -r "$credentials" ]; then
     xinit_result db ok port-only \
       "$where accepts connections (the login is not checked: no credentials file $credentials)"

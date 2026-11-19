@@ -34,7 +34,7 @@ kernel_oom_journal() {
 
 # journal_reads: the journalctl calls that read messages, without the ones that only ask
 # journalctl whether it may read (-n 0).
-journal_reads() { calls journalctl | grep -v -- ' -n 0 '; }
+journal_reads() { calls journalctl | grep -v -- ' -n 0$'; }
 
 # ---- oom
 

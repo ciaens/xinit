@@ -269,6 +269,34 @@ xinit() {
     /src/xinit/bin/xinit "$@"
 }
 
+# db_password: the password of the database, from hibernate.cfg.xml.
+db_password() {
+  in_env cat "$XT_CONFIG_DIR/hibernate.cfg.xml" | python3 -c '
+import re, sys
+text = re.sub(r"<!--.*?-->", "", sys.stdin.read(), flags=re.S)
+print(re.findall(r"connection\.password\">([^<]*)<", text)[0])'
+}
+
+# db_credentials [password]: write the credentials files of the db check, with the password of
+# hibernate.cfg.xml unless another one is given.
+db_credentials() {
+  local password="${1:-}"
+  [ -n "$password" ] || password="$(db_password)"
+  [ -n "$password" ]
+  printf '*:*:*:xwiki:%s\n' "$password" | in_env_sh "mkdir -p $XT_XINIT_CONF_DIR/credentials &&
+    umask 077 && cat > $XT_XINIT_CONF_DIR/credentials/default.pgpass"
+  printf '[client]\npassword=%s\n' "$password" | in_env_sh "umask 077 &&
+    cat > $XT_XINIT_CONF_DIR/credentials/default.my.cnf"
+}
+
+# unpack <archive>: extract a report in the container, and set R to its directory there.
+unpack() {
+  in_env_sh "rm -rf /root/xinit-test-report && mkdir -m 700 /root/xinit-test-report &&
+    tar -xzf '$1' -C /root/xinit-test-report"
+  # shellcheck disable=SC2034  # read by the tests
+  R="/root/xinit-test-report/$(in_env ls /root/xinit-test-report)"
+}
+
 # json <python expression on d>: evaluate it on $output parsed as JSON, and print the result.
 # A null prints as an empty line.
 json() {

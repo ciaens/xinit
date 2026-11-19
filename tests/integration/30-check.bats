@@ -43,21 +43,6 @@ expect() {
   [ "$got" = "$2 $3" ] || { echo "$1: expected '$2 $3', got '$got': $(of "$1" message)"; return 1; }
 }
 
-# db_credentials [password]: write the credentials files of the db check, with the password of
-# hibernate.cfg.xml unless another one is given.
-db_credentials() {
-  local password="${1:-}"
-  [ -n "$password" ] || password="$(in_env cat "$XT_CONFIG_DIR/hibernate.cfg.xml" | python3 -c '
-import re, sys
-text = re.sub(r"<!--.*?-->", "", sys.stdin.read(), flags=re.S)
-print(re.findall(r"connection\.password\">([^<]*)<", text)[0])')"
-  [ -n "$password" ]
-  printf '*:*:*:xwiki:%s\n' "$password" | in_env_sh "mkdir -p $XT_XINIT_CONF_DIR/credentials &&
-    umask 077 && cat > $XT_XINIT_CONF_DIR/credentials/default.pgpass"
-  printf '[client]\npassword=%s\n' "$password" | in_env_sh "umask 077 &&
-    cat > $XT_XINIT_CONF_DIR/credentials/default.my.cnf"
-}
-
 @test "S-CHECK-00 a healthy instance is ok on every check, on a read-only file system" {
   check
   [ "$status" -eq 0 ]

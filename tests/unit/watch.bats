@@ -6,7 +6,7 @@ load helpers
 setup() {
   use_fixture tomcat10-pgsql
   use_state
-  DUMP="$FIXTURES/journal/thread-dump-unit.txt"
+  DUMP="$FIXTURES/journal/thread-dumps-unit.txt"
   STATE_DIR="$XINIT_STATE_DIR/default"
 }
 
@@ -46,7 +46,7 @@ healed() { unset FAKE_CURL_EXIT FAKE_CURL_ERROR; }
   [ "$(stat -c %a "$STATE_DIR/state")" = 600 ]
 }
 
-@test "S-WATCH-01 watch: the third failed run in a row stores a thread dump and restarts once" {
+@test "S-WATCH-01 watch: the third failed run in a row stores a report and restarts once" {
   failing
   export FAKE_JOURNAL_UNIT="$DUMP"
   watch_at 0
@@ -69,12 +69,14 @@ healed() { unset FAKE_CURL_EXIT FAKE_CURL_ERROR; }
   [ "$(w restart_ok)" = True ]
   [ "$(w restarts)" = 1 ]
   [ "$(calls systemctl | grep '^restart ')" = "restart -- tomcat10.service" ]
-  # The thread dump: the JVM of the fixture got SIGQUIT, and what it wrote is stored.
-  [ "$(calls kill)" = "-s QUIT 98" ]
-  dump="$(w thread_dump)"
-  [[ "$dump" == "$STATE_DIR/threaddump-"*.txt ]]
-  grep -q "Full thread dump" "$dump"
-  [ "$(stat -c %a "$dump")" = 600 ]
+  # The report: the JVM of the fixture got SIGQUIT three times, and what it wrote is stored,
+  # with why XWiki is restarted.
+  [ "$(calls kill | grep -cx -- '-s QUIT 98')" = 3 ]
+  report="$(w report)"
+  [ "$report" = "$STATE_DIR/reports/report-20270115T080200Z.tar.gz" ]
+  [ "$(stat -c %a "$report")" = 600 ]
+  tar -xzOf "$report" --wildcards '*/threads/dump-3.txt' | grep -q "Full thread dump"
+  tar -xzOf "$report" --wildcards '*/summary.txt' | grep -qx "Cause: http (timeout) failed in 3 runs in a row.*"
   [ "$(stored LAST_RESTART)" = "$((NOW + 120))" ]
   [[ "$(calls logger)" == *"notification (restart): http (timeout) failed in 3 runs in a row"* ]]
 }
@@ -223,9 +225,20 @@ ACT_ON=http db"
   [ "$status" -eq 0 ]
   [ "$(w action)" = restart ]
   [ "$(w failed_checks)" = "['oom']" ]
-  [ "$(w thread_dump)" = "" ]
   [ "$(w restart_ok)" = True ]
-  [[ "$(calls logger)" == *"no thread dump: the JVM wrote no thread dump"* ]]
+  # The report says what it lacks.
+  tar -xzOf "$(w report)" --wildcards '*/summary.txt' | grep -qx "  threads: the JVM wrote no thread dump"
+}
+
+@test "watch: a report that cannot be written does not stop the restart" {
+  failing
+  conf <<<"RESTART_AFTER=1"
+  TMPDIR="$BATS_TEST_TMPDIR/no-such-directory" watch_at 0
+  [ "$status" -eq 0 ]
+  [ "$(w action)" = restart ]
+  [ "$(w report)" = "" ]
+  [ "$(w restart_ok)" = True ]
+  [[ "$(calls logger)" == *"no report: cannot create a temporary directory"* ]]
 }
 
 @test "watch: a stopped XWiki counts, and is restarted without a thread dump" {
@@ -235,7 +248,7 @@ ACT_ON=http db"
   [ "$(w action)" = restart ]
   [[ "$(w failed_checks)" == "['process', 'http']" ]]
   [ -z "$(calls kill)" ]
-  [ "$(w thread_dump)" = "" ]
+  [ -e "$(w report)" ]
   [ "$(restarts)" = 1 ]
 }
 
@@ -371,23 +384,25 @@ ACT_ON=http"
   [[ "$(calls logger)" == *"has held the lock for more than 20m"* ]]
 }
 
-@test "watch: only the last five thread dumps are kept" {
-  local i dumps
+@test "watch: only the last REPORT_KEEP reports are kept, and a wrong value stops the run" {
+  local i reports
   failing
   export FAKE_JOURNAL_UNIT="$DUMP"
-  conf <<<"RESTART_AFTER=1"
-  mkdir -p "$STATE_DIR"
-  for i in 1 2 3 4 5 6; do
-    echo old >"$STATE_DIR/threaddump-2020010${i}T000000.txt"
+  conf <<<"RESTART_AFTER=1
+REPORT_KEEP=2"
+  mkdir -p "$STATE_DIR/reports"
+  for i in 1 2 3; do
+    echo old >"$STATE_DIR/reports/report-2020010${i}T000000Z.tar.gz"
   done
   watch_at 0
-  [ -n "$(w thread_dump)" ]
-  dumps=("$STATE_DIR"/threaddump-*.txt)
-  [ "${#dumps[@]}" = 5 ]
-  [ ! -e "$STATE_DIR/threaddump-20200101T000000.txt" ]
-  [ ! -e "$STATE_DIR/threaddump-20200102T000000.txt" ]
-  [ -e "$STATE_DIR/threaddump-20200103T000000.txt" ]
-  [ -e "$(w thread_dump)" ]
+  [ -e "$(w report)" ]
+  reports=("$STATE_DIR"/reports/report-*.tar.gz)
+  [ "${#reports[@]}" = 2 ]
+  [ -e "$STATE_DIR/reports/report-20200103T000000Z.tar.gz" ]
+  conf <<<"REPORT_KEEP=none"
+  watch_at 3600
+  [ "$status" -eq 3 ]
+  [ "$(restarts)" = 1 ]
 }
 
 @test "watch: with an empty ACT_ON nothing is ever restarted" {

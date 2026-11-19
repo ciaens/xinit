@@ -133,7 +133,7 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
 }
 
 @test "S-SETUP-03 the job gets XWiki restarted through the path unit, and can do nothing else" {
-  local pid start dump
+  local pid start report
   pid="$(jvm_pid)"
   start="$(date +%s)"
   conf "HTTP_PATH=$(fault_url 'action=status&code=503')" RESTART_AFTER=1
@@ -145,9 +145,16 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
   logged "$start" "for a thread dump, on request"
   wait_healthy 300
   [ "$(jvm_pid)" != "$pid" ]
-  dump="$(in_env_sh "ls /var/lib/xinit/default/threaddump-*.txt")"
-  [ "$(in_env stat -c '%U %a' "$dump")" = "xinit 600" ]
-  in_env grep -q "Full thread dump" "$dump"
+  # The report of the job, with the thread dumps root took for it.
+  [ "$(count_logged "$start" "for a thread dump, on request")" = 3 ]
+  report="$(in_env_sh "ls /var/lib/xinit/default/reports/report-*.tar.gz")"
+  [ "$(in_env stat -c '%U %a' "$report")" = "xinit 600" ]
+  [ "$(in_env stat -c '%U %a' /var/lib/xinit/default/reports)" = "xinit 700" ]
+  unpack "$report"
+  in_env grep -q "Full thread dump" "$R/threads/dump-3.txt"
+  in_env test -s "$R/journal.txt" -a -s "$R/jvm.txt" -a -s "$R/sockets.txt" -a -s "$R/database.txt"
+  # Nothing of it is left in the temporary directory of the job, which is its own.
+  [ -z "$(in_env_sh "ls -d /tmp/xinit-report.* 2>/dev/null")" ]
 
   # The user of the job cannot restart a unit itself, this one or another.
   pid="$(jvm_pid)"
@@ -241,6 +248,28 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
   [ "$(in_env_sh "tr '\\0' ' ' </proc/$(jvm_pid)/cmdline")" = "$before" ]
 }
 
+@test "S-REPORT-06 root's report is stored by the user of the job, who owns the state" {
+  local file
+  conf
+  xinit setup --format json
+  [ "$status" -eq 0 ]
+  wait_for 180 has_run
+  xinit report --format json
+  [ "$status" -eq 0 ]
+  file="$(json 'd["report"]')"
+  [[ "$file" == /var/lib/xinit/default/reports/report-*.tar.gz ]]
+  [ "$(in_env stat -c '%U %a' "$file")" = "xinit 600" ]
+  # Root took the thread dumps itself, and reads what the job may not.
+  [ "$(json 'd["thread_dumps"]')" = 3 ]
+  [ "$(json 'd["sections"]["journal"]')" = ok ]
+  [ "$(json 'd["sections"]["database"]')" = ok ]
+  [ -z "$(in_env_sh "find /var/lib/xinit ! -user xinit")" ]
+  [ -z "$(in_env_sh "ls -d /tmp/xinit-report.* 2>/dev/null")" ]
+  # The job still writes there.
+  xinit watch --dry-run --format json
+  [ "$status" -eq 0 ]
+}
+
 @test "S-SEC-01 nothing xinit wrote lets another user read a secret, and no password is on a command line" {
   local password seen=0
   conf
@@ -251,10 +280,7 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
   [ -z "$(in_env_sh "find /var/lib/xinit /run/xinit/* /etc/xinit/credentials -perm /o+rwx")" ]
   [ "$(in_env_sh "stat -c '%U %a' /etc/xinit/credentials/default.*")" = "xinit 600" ]
 
-  password="$(in_env cat "$XT_CONFIG_DIR/hibernate.cfg.xml" | python3 -c '
-import re, sys
-text = re.sub(r"<!--.*?-->", "", sys.stdin.read(), flags=re.S)
-print(re.findall(r"connection\.password\">([^<]*)<", text)[0])')"
+  password="$(db_password)"
   [ "${#password}" -ge 8 ] ||
     skip "the database password of this variant is too common a word to search for"
   # shellcheck disable=SC2154  # $stderr is set by bats' run

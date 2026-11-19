@@ -100,6 +100,19 @@
 # and run without a shell: no quotes, no variables, no pipes.
 #RESTART_CMD=
 
+# ---- Reports ----------------------------------------------------------------------------------
+# `xinit report` builds one, and `xinit watch` before it restarts XWiki.
+
+# How many reports are kept, in STATE_DIR/<instance>/reports.
+#REPORT_KEEP=10
+# How many lines of the log of XWiki go in a report.
+#REPORT_JOURNAL_LINES=2000
+# yes: a report holds the text of the queries the database is running. They may hold data of the
+# wiki, and the report may leave by mail.
+#REPORT_DB_QUERIES=no
+# How long to wait between two of the three thread dumps of a report.
+#THREADDUMP_INTERVAL=5s
+
 # ---- What `xinit setup` installs ----------------------------------------------------------------
 # Run `xinit setup` again after changing one of these.
 

@@ -13,19 +13,21 @@ setup() {
 w() { json "d['watch']['$1']"; }
 restarts() { calls systemctl | grep -c '^restart ' || true; }
 
-@test "act: a job that is not root asks for the thread dump and the restart, and waits for them" {
+@test "act: a job that is not root asks for the thread dumps and the restart, and waits for them" {
   export FAKE_UID=995 FAKE_STATE_OWNER=995:995 FAKE_USER=xinit FAKE_ACT=1 FAKE_CURL_EXIT=28
-  export FAKE_JOURNAL_UNIT="$FIXTURES/journal/thread-dump-unit.txt"
+  export FAKE_JOURNAL_UNIT="$FIXTURES/journal/thread-dumps-unit.txt"
   conf <<<"RESTART_AFTER=1"
   run --separate-stderr "$XINIT" watch --format json
   [ "$status" -eq 0 ]
   [ "$(w action)" = restart ]
   [ "$(w restart_ok)" = True ]
-  [ -n "$(w thread_dump)" ]
+  [ -e "$(w report)" ]
   # It did neither itself.
   [ "$(restarts)" = 0 ]
   [ -z "$(calls kill)" ]
   [ "$(cat "$FAKEBIN/requests.log")" = "request-thread-dump
+request-thread-dump
+request-thread-dump
 request-restart" ]
   [ "$(ls "$RUN")" = lock ]
 }
@@ -37,7 +39,8 @@ request-restart" ]
   [ "$status" -eq 3 ]
   [ "$(w action)" = restart ]
   [ "$(w restart_ok)" = False ]
-  [ "$(w thread_dump)" = "" ]
+  # The report is there, without the thread dumps.
+  tar -xzOf "$(w report)" --wildcards '*/summary.txt' | grep -q "^  threads: the JVM could not be sent a signal: nothing answered the request"
   # shellcheck disable=SC2154  # $stderr is set by bats' run
   [[ "$stderr" == *"nothing answered the request"*"xinit setup"* ]]
   [ "$(ls "$RUN")" = lock ]

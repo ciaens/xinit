@@ -77,17 +77,19 @@ w() { json "d['watch']['$1']"; }
   in_env_sh "journalctl -t xinit --since '-5min' -o cat | grep -q 'notification (restart)'"
 }
 
-@test "S-WATCH-08 watch: the thread dump of a JVM that still runs is stored before the restart" {
-  local dump
+@test "S-WATCH-08 watch: a report on a JVM that still runs is stored before the restart" {
+  local report
   watch_broken -o RESTART_AFTER=1
   [ "$status" -eq 0 ]
   [ "$(w action)" = restart ]
-  dump="$(w thread_dump)"
-  [[ "$dump" == /var/lib/xinit/default/threaddump-*.txt ]]
-  [ "$(in_env stat -c '%U %a' "$dump")" = "root 600" ]
-  in_env grep -q "Full thread dump" "$dump"
-  # Taken before the restart: it shows the threads of a running XWiki.
-  in_env grep -q "http-nio\|qtp" "$dump"
+  report="$(w report)"
+  [[ "$report" == /var/lib/xinit/default/reports/report-*.tar.gz ]]
+  [ "$(in_env stat -c '%U %a' "$report")" = "root 600" ]
+  unpack "$report"
+  # Taken before the restart: three dumps, which show the threads of a running XWiki.
+  in_env grep -q "Full thread dump" "$R/threads/dump-3.txt"
+  in_env grep -q "http-nio\|qtp" "$R/threads/dump-1.txt"
+  in_env grep -q "^Cause: http (status) failed" "$R/summary.txt"
 }
 
 @test "S-WATCH-02 watch: during the cooldown there is no second restart" {

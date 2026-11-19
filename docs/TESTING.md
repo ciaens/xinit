@@ -106,9 +106,10 @@ Unit tests (`tests/unit/`) run xinit on the host, against the real files of each
 - `use_fixture <variant>` points xinit at a copy of `tests/fixtures/<variant>/` (`XINIT_ROOT`),
   with an empty configuration directory (`XINIT_CONF_DIR`).
 - It also puts fakes of `systemctl`, `dpkg-query`, `ps`, `curl`, `df`, `journalctl`, `timeout`,
-  `psql` and `mariadb` first on `PATH`. They answer as on a healthy instance, and `FAKE_*`
+  `psql`, `mariadb`, `ss` and `getent` first on `PATH`. They answer as on a healthy instance, and `FAKE_*`
   variables change one answer: see `tests/unit/helpers.bash`.
-- `tests/fixtures/journal/` holds the journal lines of real out-of-memory faults.
+- `tests/fixtures/journal/` holds the journal lines of real out-of-memory faults, and three
+  real thread dumps taken five seconds apart, cut down to some twenty threads.
 - `use_state` gives xinit state and runtime directories of its own, a fake `logger`, and a fixed
   clock: xinit reads the time from `XINIT_TEST_NOW` when it is set, so a test moves in time without
   waiting. Alone, it is for the commands that need no XWiki installation. After `use_fixture`, it
@@ -224,11 +225,12 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 ### Diagnostics and notifications: `50-report.bats`
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
-| S-REPORT-01 | 3 | healthy | bundle 0600, has layout, results, thread dump, journal excerpt, DB activity |
-| S-REPORT-02 | 3 | any | no test password (DB, `Admin`'s, netrc) appears anywhere in the bundle |
+| S-REPORT-01 | 3 | healthy | archive 0600, with the layout, the results, the thread dumps, the end of the journal, the activity of the database; a stopped XWiki still gives a report, without thread dumps |
+| S-REPORT-02 | 3 | a request whose URL holds the database password | the password appears nowhere in the archive (skipped when it is shorter than 8 characters) |
 | S-REPORT-03 | 3 | deadlock fault | the summary names the deadlock |
 | S-REPORT-04 | 3 | 30 concurrent requests on a slow page | summary of the most frequent URLs across request threads lists the slow page first |
-| S-REPORT-05 | 3 | no `jcmd` (Debian packages ship a JRE) | thread dump taken through `SIGQUIT` and read from the journal |
+| S-REPORT-05 | 3 | no `jcmd` (Debian packages ship a JRE) | three thread dumps taken through `SIGQUIT` and read from the journal |
+| S-REPORT-06 | 3 | after `xinit setup`, `xinit report` by root | the archive is stored by the user of the job, and belongs to it |
 | S-NOTIFY-01 | 3 | S-WATCH-01 with a local MTA | one mail; the subject has the instance and the check; lines ≤ 900 chars |
 | S-NOTIFY-02 | 3 | heap OOM + restart | the subject has `[OOM]` |
 | S-NOTIFY-03 | 3 | webhook to a local listener | one POST, valid JSON |

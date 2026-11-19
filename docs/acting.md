@@ -98,7 +98,7 @@ One run:
 1. takes the lock of the instance, or ends at once when another run holds it;
 2. runs the checks of `CHECKS`, and those of `ACT_ON`;
 3. counts the runs in a row in which a check of `ACT_ON` was `crit`;
-4. at `RESTART_AFTER` such runs, stores a thread dump, then restarts XWiki.
+4. at `RESTART_AFTER` such runs, stores a report, then restarts XWiki.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -126,7 +126,7 @@ The output is the one of `xinit check`, plus what the run did. In JSON, the `wat
 | `restarts`, `max_restarts` | restarts in the window, this one included, and the limit |
 | `cooldown_remaining_seconds` | with the reason `cooldown` |
 | `restart_ok` | `true` or `false` after a restart, else `null` |
-| `thread_dump` | the file of the thread dump, else `null` |
+| `report` | the archive of the report, else `null` |
 
 | Reason | Action | Meaning |
 |---|---|---|
@@ -145,9 +145,9 @@ The output is the one of `xinit check`, plus what the run did. In JSON, the `wat
   (no installation, state that cannot be read or written, restart that failed); 64 for a usage
   error. The state of XWiki is in the output.
 - A restart is remembered before it is done, and counts even when it fails.
-- The thread dump is asked with `kill -3` and read from the journal: the Debian packages bring a
-  JRE, without `jcmd`. It goes to `<STATE_DIR>/<instance>/threaddump-<time>.txt`; the last five
-  are kept. A JVM that is stopped or frozen gives none, and is restarted all the same.
+- Before the restart, a report is built, with three thread dumps of the JVM: see
+  [reporting.md](reporting.md). It takes about 15 seconds. A JVM that is stopped or frozen gives
+  no thread dump, and a report that cannot be written does not stop the restart.
 - What a run decides is recorded in the system log (`journalctl -t xinit`): each failed run, each
   restart, and the first healthy run after failures. A restart and the `flapping` stop are also
   notifications, which for now are lines in the same log.
@@ -200,7 +200,7 @@ for `status`, and never a wrong "off".
 |---|---|---|
 | `<STATE_DIR>/<instance>/maintenance` | the maintenance | `xinit maint` |
 | `<STATE_DIR>/<instance>/state` | the count of failed runs, the times of the restarts | `xinit watch` |
-| `<STATE_DIR>/<instance>/threaddump-*.txt` | the last five thread dumps | `xinit watch` |
+| `<STATE_DIR>/<instance>/reports/report-*.tar.gz` | the last `REPORT_KEEP` reports | `xinit watch`, `xinit report` |
 | `<RUN_DIR>/<instance>/lock` | the lock of one `xinit watch` run | `xinit watch` |
 
 `STATE_DIR` is `/var/lib/xinit` and `RUN_DIR` is `/run/xinit`.
@@ -209,6 +209,7 @@ for `status`, and never a wrong "off".
   rename: a reader never sees half of it.
 - Root never writes in a directory that belongs to another user. When `STATE_DIR` belongs to the
   user of the periodic job, `xinit maint on` and `off` run by root are run again as that user,
-  with `setpriv`. What root sets is then readable by the periodic job.
+  with `setpriv`. What root sets is then readable by the periodic job. A report that root builds
+  is stored the same way.
 - `maintenance` and `state` are two files, so that `xinit maint` never waits for a running
   `xinit watch`.

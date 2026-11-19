@@ -40,7 +40,8 @@ _xinit_journal() {
   XINIT_JOURNAL_OUTPUT=""
   # journalctl exits 0 for a user who may not read the system journal, and only says so. Ask for
   # no message at all, so that what it prints is its own words, not something XWiki logged.
-  notice="$(journalctl --no-pager -o cat -n 0 "$@" 2>&1)" || true
+  # It comes last: a caller may ask for a number of lines itself.
+  notice="$(journalctl --no-pager -o cat "$@" -n 0 2>&1)" || true
   case "$notice" in
     *"insufficient permissions"* | *"not seeing messages from other users"*)
       XINIT_JOURNAL_ERROR="this user may not read it (add the user to the systemd-journal group)"
