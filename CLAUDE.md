@@ -113,6 +113,12 @@ These are verified on XWiki 18.9.0 / 17.10 with the Debian packages. The details
   not visible to the service.
 - `systemctl show` works for an unprivileged user; `systemctl restart` answers "Access denied"
   (the test images have no polkit).
+- On cgroup v2, systemd knows when the kernel's OOM killer killed a process of a unit: it ends
+  the unit with `Result=oom-kill` and leaves it `failed`. Only `Restart=on-failure` or `always`
+  starts it again: the units of the packages do not (seen with systemd 252, 257 and 259). On
+  cgroup v1 it sees a process killed by a signal, and they do.
+- systemd 259 words that kill differently in the journal ("The kernel OOM killer killed some
+  processes in this unit"). The `Result` of the unit does not depend on the wording.
 - `journalctl` exits 0 for a user who may not read the journal, and prints a notice instead.
 - `systemctl show -p ControlGroup` gives the path the kernel uses in its OOM messages, container
   prefix included.
@@ -135,5 +141,9 @@ These are verified on XWiki 18.9.0 / 17.10 with the Debian packages. The details
   `BASE_IMAGE=mirror.gcr.io/library/<image>`; GitHub's runners are not affected.
 - This machine has cgroup v1. systemd 258 and later need cgroup v2: the Ubuntu 26.04 variant
   (systemd 259) does not boot here, and is built and tested by the workflows only.
+- The result archives of a workflow run cannot be downloaded from here (the proxy refuses
+  GitHub's storage host). `tests/run.sh` prints what each failed test said: read the job log.
+- This session's GitHub access cannot start a workflow (`workflow_dispatch` answers 403): ask
+  the project lead to run `gh workflow run integration.yml --repo <fork> --ref master`.
 - Bash reads a running script as it executes it. Never edit `tests/env/*.sh` while a build runs from
   them: run long builds from a copy.

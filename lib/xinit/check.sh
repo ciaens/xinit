@@ -43,6 +43,21 @@ xinit_jvm_age() {
   printf '%s\n' "$age"
 }
 
+# xinit_unit_age: print how many seconds ago the main process of the unit last started, running
+# or not. Returns 1 when that cannot be told. systemd counts in microseconds since the boot.
+xinit_unit_age() {
+  local unit="${XINIT_LAYOUT[UNIT]-}" started uptime
+  [ -n "$unit" ] || return 1
+  started="$(xinit_systemctl_show "$unit" ExecMainStartTimestampMonotonic)" || return 1
+  [[ "$started" =~ ^[0-9]{1,18}$ ]] && [ "$((10#$started))" -gt 0 ] || return 1
+  [ -r "${XINIT_ROOT:-}/proc/uptime" ] || return 1
+  read -r uptime _ <"${XINIT_ROOT:-}/proc/uptime" || return 1
+  uptime="${uptime%%.*}"
+  [[ "$uptime" =~ ^[0-9]{1,12}$ ]] || return 1
+  [ "$((10#$uptime))" -ge "$((10#$started / 1000000))" ] || return 1
+  printf '%s\n' "$((10#$uptime - 10#$started / 1000000))"
+}
+
 # xinit_jvm_starting: the JVM started less than STARTUP_GRACE seconds ago.
 xinit_jvm_starting() {
   local age grace

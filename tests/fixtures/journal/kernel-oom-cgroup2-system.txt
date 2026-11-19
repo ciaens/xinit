@@ -1,0 +1,4 @@
+http-nio-8080-e invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=0
+oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=docker-e0d469358274abab481624056748be1e1594d64565ade83e80cf55b95d031654.scope,mems_allowed=0,oom_memcg=/system.slice/docker-e0d469358274abab481624056748be1e1594d64565ade83e80cf55b95d031654.scope/system.slice/tomcat10.service,task_memcg=/system.slice/docker-e0d469358274abab481624056748be1e1594d64565ade83e80cf55b95d031654.scope/system.slice/tomcat10.service,task=java,pid=9582,uid=997
+tomcat10.service: A process of this unit has been killed by the OOM killer.
+tomcat10.service: Failed with result 'oom-kill'.

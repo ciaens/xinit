@@ -204,6 +204,29 @@ heal_cgroup_memory() {
     systemctl daemon-reload && systemctl restart $XT_UNIT"
 }
 
+# after_kill <pid of the killed JVM> [timeout seconds]: wait for what systemd makes of a JVM that
+# the kernel killed, and print it: "restarted" when a new JVM runs, "failed" when the unit is left
+# down. On cgroup v1 systemd only sees a process killed by a signal, and the units of the
+# packages start it again. On cgroup v2 it ends the unit with the result oom-kill, which their
+# Restart= does not cover.
+after_kill() {
+  local old="$1" end=$((SECONDS + ${2:-120})) state pid
+  while ((SECONDS < end)); do
+    state="$(in_env systemctl show -p ActiveState --value "$XT_UNIT")"
+    pid="$(jvm_pid)" || pid=""
+    if [ "$state" = failed ]; then
+      echo failed
+      return 0
+    elif [ "$state" = active ] && [ -n "$pid" ] && [ "$pid" != "$old" ]; then
+      echo restarted
+      return 0
+    fi
+    sleep 2
+  done
+  echo "after_kill: $XT_UNIT is neither failed nor running a new JVM (state: $state)" >&2
+  return 1
+}
+
 # heal_all: best effort, used by teardown so that one failed test does not poison the next.
 heal_all() {
   in_env_sh "pid=\$(systemctl show -p MainPID --value $XT_UNIT); [ \"\$pid\" != 0 ] && kill -CONT \$pid

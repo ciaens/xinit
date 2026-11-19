@@ -189,7 +189,7 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | S-DISK-01 | 1 | `DISK_WARN` above the current usage | `disk` warn |
 | S-OOM-01 | 1 | heap OOM fault | `oom` crit, reason `heap` |
 | S-OOM-02 | 1 | heap OOM fault, then restart | `oom` ok (OOM older than the last start) |
-| S-OOM-03 | 1 | kernel OOM fault | `oom` warn, reason `kernel`: systemd has already restarted XWiki, and a restart does not fix the memory settings |
+| S-OOM-03 | 1 | kernel OOM fault | `oom` warn, reason `kernel`. On cgroup v1 systemd has restarted XWiki: `process` ok. On cgroup v2 the unit of the package is left down: `process` crit, reason `failed` |
 | S-OOM-04 | 1 | `xinit check oom` as a user who may not read the journal | `oom` unknown, reason `no-access`, not ok |
 | S-FMT-01 | 1 | any | `--format json` parses; `--format nagios` first line `XINIT <STATUS> - …` and exit code matches |
 
@@ -204,6 +204,7 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
 | S-PROC-02 | 2 | `xinit setup`, then killed JVM | systemd restarts it; one crash notification (journal); no `xinit watch` restart; a restart someone asks for is not notified |
+| S-PROC-04 | 2 | `xinit setup`, then kernel OOM fault | systemd starts XWiki again on cgroup v1 and v2, and the crash is notified |
 | S-WATCH-01 | 2 | frozen JVM, `RESTART_AFTER=3` | runs 1–2 only count; run 3 restarts once (a frozen JVM gives no thread dump) |
 | S-WATCH-02 | 2 | a page that always answers 503, again after a restart | reason `cooldown`, no second restart |
 | S-WATCH-03 | 2 | maintenance on, failing page | no restart; the failure is counted |

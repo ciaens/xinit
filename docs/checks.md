@@ -139,8 +139,8 @@ The journal of the unit, over the last `OOM_WINDOW` seconds.
 | Status | Reason | When |
 |---|---|---|
 | ok | `ok` | nothing found |
-| crit | `heap` | `java.lang.OutOfMemoryError` since the JVM started, in a line the JVM wrote itself or as the cause in a stack trace: at the start of the line. The words inside a message XWiki logged do not count. That JVM is unreliable until it is restarted. |
-| warn | `kernel` | the kernel's OOM killer killed a process of the unit's control group. systemd has usually restarted XWiki by then: the memory settings need attention, a restart does not help. |
+| crit | `heap` | `java.lang.OutOfMemoryError` since the JVM started, in a line the JVM wrote itself or as the cause in a stack trace: at the start of the line. The words inside a message XWiki logged do not count. That JVM is unreliable until it is restarted. Without a running JVM, the errors of the last one count: since the unit last started. |
+| warn | `kernel` | the kernel's OOM killer killed a process of the unit's control group. The memory settings need attention, which a restart does not give. On cgroup v1, systemd has usually restarted XWiki by then. On cgroup v2, systemd ends the unit with the result `oom-kill` and starts it again only if its `Restart=` is `on-failure` or `always`, which the units of the packages are not: the process check then says `failed`, and `xinit setup` makes systemd start it again. |
 | unknown | `no-access` | the user may not read the journal (group `systemd-journal`) |
 | unknown | `no-journal`, `bad-config` | `LOG_SOURCE` is not the journal; `OOM_WINDOW` is not a number |
 

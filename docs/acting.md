@@ -70,6 +70,9 @@ uses `systemctl start xinit-watch@<instance>.service`, or `xinit watch --dry-run
 ### Crashes and first requests
 
 - The drop-in sets `Restart=on-failure`: systemd starts a crashed XWiki again after 10 seconds.
+  This also covers a kill by the kernel's OOM killer on cgroup v2, which the `Restart=on-abort`
+  of Debian's Tomcat unit does not: without the drop-in, XWiki then stays down until the
+  periodic job restarts it.
 - When the unit stops for another reason than being asked to, its `ExecStopPost=` starts
   `xinit-notify@<instance>.service`. This happens at once, not at the next run of the job. A
   restart someone asks for is not notified, nor one the job asked for. For now the notification

@@ -82,6 +82,50 @@ journal_reads() { calls journalctl | grep -v -- ' -n 0 '; }
   [ "$(of oom metrics.kernel_kills)" = 1 ]
 }
 
+@test "oom: a kill on cgroup v2 is seen in systemd's words, whatever the control group of the stopped unit" {
+  # Lines of a real kill. The unit has failed, so systemd no longer tells its control group.
+  export FAKE_UNIT_STOPPED=1
+  sed -i 's/^ControlGroup=.*/ControlGroup=/' "$XINIT_ROOT/cmd/systemctl-show-tomcat10.txt"
+  FAKE_JOURNAL_SYSTEM="$FIXTURES/journal/kernel-oom-cgroup2-system.txt" check oom
+  [ "$status" -eq 1 ]
+  expect oom warn kernel
+  [ "$(of oom metrics.kernel_kills)" = 1 ]
+  # systemd 259 says it in other words.
+  FAKE_JOURNAL_SYSTEM="$FIXTURES/journal/kernel-oom-systemd259-system.txt" check oom
+  expect oom warn kernel
+  [ "$(of oom metrics.kernel_kills)" = 1 ]
+}
+
+@test "oom: a unit that systemd ended for an OOM kill counts, whatever the journal says" {
+  export FAKE_UNIT_STOPPED=1
+  sed -i 's/^Result=.*/Result=oom-kill/' "$XINIT_ROOT/cmd/systemctl-show-tomcat10.txt"
+  check oom
+  [ "$status" -eq 1 ]
+  expect oom warn kernel
+  [ "$(of oom metrics.kernel_kills)" = 1 ]
+  [[ "$(of oom message)" == *"still down"* ]]
+  # Started again, the result is no longer that one.
+  unset FAKE_UNIT_STOPPED
+  sed -i 's/^Result=.*/Result=success/' "$XINIT_ROOT/cmd/systemctl-show-tomcat10.txt"
+  check oom
+  expect oom ok ok
+}
+
+@test "oom: without a JVM, heap errors are looked for since the unit last started, not before" {
+  # The unit started its main process 315 s after the boot, and the host has been up for 1000 s.
+  export FAKE_UNIT_STOPPED=1
+  mkdir -p "$XINIT_ROOT/proc"
+  echo "1000.50 9000.00" >"$XINIT_ROOT/proc/uptime"
+  FAKE_JOURNAL_UNIT="$FIXTURES/journal/heap-oom-unit.txt" check oom
+  expect oom crit heap
+  [[ "$(of oom message)" == *"the last JVM of tomcat10.service logged 4 "*"no longer running"* ]]
+  [[ "$(journal_reads | sed -n 1p)" == *"-u tomcat10.service --since -685s"* ]]
+  # When that cannot be told, the whole window is searched.
+  rm -f "$FAKEBIN/journalctl.calls" "$XINIT_ROOT/proc/uptime"
+  check oom
+  [[ "$(journal_reads | sed -n 1p)" == *"--since -3600s"* ]]
+}
+
 @test "oom: one kill reported by both the kernel and systemd is counted once" {
   { cat "$(kernel_oom_journal)"
     echo "tomcat10.service: A process of this unit has been killed by the OOM killer."

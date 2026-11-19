@@ -190,6 +190,27 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
   [ "$(count_logged "$start" "notification (crash)")" = 1 ]
 }
 
+@test "S-PROC-04 once set up, an XWiki that the kernel kills for memory is started again and notified" {
+  local before start
+  conf
+  xinit setup --format json
+  [ "$status" -eq 0 ]
+  # The job would restart XWiki too, later: here systemd has to.
+  in_env systemctl stop xinit-watch@default.timer
+  fault_cgroup_memory 1200M
+  wait_healthy 300
+  install_fault_page
+  before="$(jvm_pid)"
+  start="$(date +%s)"
+  for _ in $(seq 1 15); do XT_HTTP_TIMEOUT=20 http_code "$(fault_url 'action=hog&mb=100')" >/dev/null; done
+  # With the unit of the package alone, cgroup v2 leaves it down (S-OOM-03).
+  run after_kill "$before" 180
+  in_env systemctl show -p ActiveState,SubState,Result,NRestarts "$XT_UNIT" >&2
+  [ "$output" = restarted ]
+  wait_for 30 logged "$start" "notification (crash): $XT_UNIT stopped unexpectedly"
+  wait_healthy 300
+}
+
 @test "S-WARMUP-01 the first requests are made after each start, to every URL" {
   local start
   conf "WARMUP_URLS=/bin/view/Main/ /bin/view/Sandbox/"

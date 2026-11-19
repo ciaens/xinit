@@ -43,4 +43,7 @@ tests/fixtures/collect.sh xjetty-pgsql     # one variant
 
 `journal/` holds journal lines of real events, as `journalctl -o cat` prints them: a heap
 `OutOfMemoryError`, a kill by the kernel's OOM killer, and the start and end of a thread dump
-(`kill -3`). They were copied by hand from a test container.
+(`kill -3`). They were copied by hand from a test container. The kill by the kernel comes three
+times: on cgroup v1 (`kernel-oom-system.txt`), on cgroup v2 with systemd 252
+(`kernel-oom-cgroup2-system.txt`), and with systemd 259, which words it differently
+(`kernel-oom-systemd259-system.txt`). The last two come from the log of a CI run.

@@ -252,21 +252,30 @@ print(re.findall(r"connection\.password\">([^<]*)<", text)[0])')"
 }
 
 @test "S-OOM-03 a kill by the kernel's OOM killer is warn" {
+  local before outcome
   fault_cgroup_memory 1200M
   wait_healthy 300
   install_fault_page
-  local before
   before="$(jvm_pid)"
   for _ in $(seq 1 15); do XT_HTTP_TIMEOUT=20 http_code "$(fault_url 'action=hog&mb=100')" >/dev/null; done
-  # What systemd and xinit made of it, for the log of a failure.
+  outcome="$(after_kill "$before")"
   in_env systemctl show -p ActiveState,SubState,Result,NRestarts "$XT_UNIT" >&2
-  check oom process
-  echo "$output" >&2
-  wait_healthy 300
-  [ "$(jvm_pid)" != "$before" ]
-  check oom process
-  [ "$status" -eq 1 ]
-  expect oom warn kernel
-  [ "$(of oom metrics.kernel_kills)" -ge 1 ]
-  expect process ok running
+  if [ "$outcome" = failed ]; then
+    # cgroup v2: systemd knows of the kill, and the unit of the package is left down.
+    check oom process
+    echo "$output" >&2
+    [ "$status" -eq 2 ]
+    expect oom warn kernel
+    [ "$(of oom metrics.kernel_kills)" -ge 1 ]
+    expect process crit failed
+  else
+    # cgroup v1: systemd saw a process killed by a signal, and started XWiki again.
+    wait_healthy 300
+    check oom process
+    echo "$output" >&2
+    [ "$status" -eq 1 ]
+    expect oom warn kernel
+    [ "$(of oom metrics.kernel_kills)" -ge 1 ]
+    expect process ok running
+  fi
 }

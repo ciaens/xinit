@@ -1,0 +1,4 @@
+VM Thread invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=0
+oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=docker-88949560afb4a3a60426ba797799ee1c6353d78295d2c7d871644fee55fd4c10.scope,mems_allowed=0,oom_memcg=/system.slice/docker-88949560afb4a3a60426ba797799ee1c6353d78295d2c7d871644fee55fd4c10.scope/system.slice/tomcat10.service,task_memcg=/system.slice/docker-88949560afb4a3a60426ba797799ee1c6353d78295d2c7d871644fee55fd4c10.scope/system.slice/tomcat10.service,task=java,pid=9706,uid=996
+tomcat10.service: The kernel OOM killer killed some processes in this unit.
+tomcat10.service: Failed with result 'oom-kill'.
