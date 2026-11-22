@@ -71,8 +71,8 @@ The entry is written before a restart, and whatever becomes of the mail.
 - **The subject** is `[xinit] <instance> on <host>: <what happened> (<checks>)`, for example
   `[xinit] default on wiki1: XWiki restarted (http)`. It starts with `[xinit] [OOM]` when the
   `oom` check of that run found an out-of-memory error, or when systemd says the kernel killed
-  XWiki for memory (`oom-kill`). An error older than the last start of the JVM does not count:
-  the `oom` check does not see it.
+  XWiki for memory (`oom-kill`). A heap error older than the last start of the JVM does not
+  count: the `oom` check does not see it. A kill by the kernel counts for `OOM_WINDOW`.
 - **The text** is what happened, the instance, the host and the time, then the summary of the
   report: the results of the checks, the JVM, the database, the sockets and what the thread dumps
   say ([reporting.md](reporting.md)). No line is longer than 900 characters, and control

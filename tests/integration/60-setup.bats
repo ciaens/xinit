@@ -220,8 +220,9 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
 }
 
 @test "S-NOTIFY-09 once set up, a crash is mailed by its unit, once, and the job mails its restart" {
-  local pid start host
+  local pid start host began
   host="$(host_name)"
+  began="$(date +%s)"
   smtp_start
   conf "MAIL=admin@example.org" "MAIL_SMTP_URL=$XT_MAIL_URL"
   xinit setup --format json
@@ -254,11 +255,15 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
 
   # The job, confined too, mails the restart it asks for, with its report.
   pid="$(jvm_pid)"
-  in_env_sh "printf '%s\n' 'HTTP_PATH=$(fault_url 'action=status&code=503')' RESTART_AFTER=1 >> /etc/xinit/xinit.conf"
+  # The kernel may have killed XWiki for memory in an earlier test: that would put [OOM] in the
+  # subject. The oom check looks no further back than the start of this one.
+  in_env_sh "printf '%s\n' 'HTTP_PATH=$(fault_url 'action=status&code=503')' RESTART_AFTER=1 \
+    OOM_WINDOW=$(($(date +%s) - began + 1)) >> /etc/xinit/xinit.conf"
   in_env systemctl start xinit-watch@default.timer
   wait_for 210 has_restarted
   two_mails() { [ "$(mails)" -ge 2 ]; }
   wait_for 120 two_mails
+  mail_header 2 Subject >&2
   [ "$(mail_header 2 Subject)" = "[xinit] default on $host: XWiki restarted (http)" ]
   mail 2 | grep -qx "The restart was done."
   mail 2 | grep -q "^Report: /var/lib/xinit/default/reports/report-.*.tar.gz (attached)$"
