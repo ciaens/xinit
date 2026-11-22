@@ -157,9 +157,10 @@
 # with a unit: s, m or min, h, d (90, 15min, 2h, 1h30m).
 #MAINT_DURATION=2h
 # A maintenance that lasts is notified: first when it has lasted MAINT_REMINDER_AFTER, then every
-# MAINT_REMINDER. MAINT_REMINDER=0: never.
+# MAINT_REMINDER. MAINT_REMINDER=0: never. A maintenance of the default MAINT_DURATION ends before
+# the first reminder.
 #MAINT_REMINDER=1h
-#MAINT_REMINDER_AFTER=1h
+#MAINT_REMINDER_AFTER=2h
 
 # Where xinit keeps what it has to remember, in one directory per instance.
 #STATE_DIR=/var/lib/xinit

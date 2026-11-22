@@ -159,7 +159,7 @@ notified() { json "d['watch']['notification'] and d['watch']['notification']['ev
 @test "S-NOTIFY-06 a maintenance that lasts is reminded once per MAINT_REMINDER" {
   xinit maint on --for 10m --reason "upgrade"
   [ "$status" -eq 0 ]
-  # In its first hour, nothing.
+  # In its first two hours, nothing.
   watch
   [ "$status" -eq 0 ]
   [ -z "$(notified)" ]

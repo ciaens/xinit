@@ -80,7 +80,7 @@ Decided with the project lead before the code:
   report. It covers the other cases in which xinit no longer sees XWiki.
 - **The crash unit writes in the state directory**, to hold back the mails of a crash loop. The
   report of a crash comes with the other changes of `xinit setup`.
-- **The maintenance reminder waits for `MAINT_REMINDER_AFTER`** (one hour), then comes every
+- **The maintenance reminder waits for `MAINT_REMINDER_AFTER`** (two hours), then comes every
   `MAINT_REMINDER`.
 
 Found while coding:

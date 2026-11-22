@@ -27,9 +27,10 @@
 # How long a maintenance lasts, when `xinit maint on` is not given --for.
 xinit_config_define MAINT_DURATION 2h
 # While a maintenance is on, `xinit watch` reminds of it: first when it has lasted
-# MAINT_REMINDER_AFTER, then every MAINT_REMINDER. 0: no reminder.
+# MAINT_REMINDER_AFTER, then every MAINT_REMINDER. MAINT_REMINDER=0: no reminder. A maintenance
+# of the default duration ends before the first one.
 xinit_config_define MAINT_REMINDER 1h
-xinit_config_define MAINT_REMINDER_AFTER 1h
+xinit_config_define MAINT_REMINDER_AFTER 2h
 
 # The maintenance as stored: UNTIL and SINCE (seconds since the epoch), BY and REASON.
 declare -gA XINIT_MAINTENANCE=()

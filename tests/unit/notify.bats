@@ -201,20 +201,23 @@ MAIL=admin@example.org"
   [ "$status" -eq 0 ]
   watch_at 0
   [ -z "$(notified)" ]
-  watch_at 3540
-  [ -z "$(notified)" ]
+  # Not in its first two hours, the default length of a maintenance.
   watch_at 3600
-  [ "$status" -eq 0 ]
-  [ "$(notified)" = "maintenance sent" ]
-  [ "$(mail_header 1 Subject)" = "[xinit] default on wiki1.example.org: still in maintenance" ]
-  mail 1 | grep -qx "In maintenance for 1h, set by root (upgrade to 18.9): xinit does not restart XWiki. It ends in 3h, or with 'xinit maint off'."
-  [ "$(mail_header 1 Content-Type)" = "text/plain; charset=UTF-8" ]
-  # Then every MAINT_REMINDER.
-  watch_at 3660
   [ -z "$(notified)" ]
   watch_at 7140
   [ -z "$(notified)" ]
   watch_at 7200
+  [ "$status" -eq 0 ]
+  [ "$(notified)" = "maintenance sent" ]
+  [ "$(mail_header 1 Subject)" = "[xinit] default on wiki1.example.org: still in maintenance" ]
+  mail 1 | grep -qx "In maintenance for 2h, set by root (upgrade to 18.9): xinit does not restart XWiki. It ends in 2h, or with 'xinit maint off'."
+  [ "$(mail_header 1 Content-Type)" = "text/plain; charset=UTF-8" ]
+  # Then every MAINT_REMINDER.
+  watch_at 7260
+  [ -z "$(notified)" ]
+  watch_at 10740
+  [ -z "$(notified)" ]
+  watch_at 10800
   [ "$(notified)" = "maintenance sent" ]
   [ "$(mails)" = 2 ]
   [ "$(fields maintenance)" = 2 ]
@@ -224,21 +227,21 @@ MAIL=admin@example.org"
 }
 
 @test "S-NOTIFY-06 notify: the first reminder waits for MAINT_REMINDER_AFTER, the next ones for MAINT_REMINDER" {
-  conf <<<"MAINT_REMINDER_AFTER=2h
-MAINT_REMINDER=30min"
+  conf <<<"MAINT_REMINDER_AFTER=30min
+MAINT_REMINDER=10min"
   run "$XINIT" maint on --for 1d
-  watch_at 3600
+  watch_at 1740
   [ -z "$(notified)" ]
-  watch_at 7200
+  watch_at 1800
   [ "$(notified)" = "maintenance off" ]
-  watch_at 8940
+  watch_at 2340
   [ -z "$(notified)" ]
-  watch_at 9000
+  watch_at 2400
   [ "$(notified)" = "maintenance off" ]
   [ "$(fields maintenance)" = 2 ]
   # A new maintenance starts again from nothing.
-  XINIT_TEST_NOW=$((NOW + 9060)) run "$XINIT" maint on --for 1d
-  watch_at 9120
+  XINIT_TEST_NOW=$((NOW + 2460)) run "$XINIT" maint on --for 1d
+  watch_at 2520
   [ -z "$(notified)" ]
 }
 

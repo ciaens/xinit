@@ -189,9 +189,9 @@ xinit maint off
   (`90`, `15min`, `2h`, `1h30m`).
 - `maint` needs no detected installation: it works from the instance name alone.
 - `on` and `off` are recorded in the system log (`journalctl -t xinit`).
-- A maintenance that lasts is notified by `xinit watch`: after `MAINT_REMINDER_AFTER` (one
-  hour), then every `MAINT_REMINDER` (one hour; `0`: never). With the default two hours of a
-  maintenance, that is one reminder.
+- A maintenance that lasts is notified by `xinit watch`: after `MAINT_REMINDER_AFTER` (two
+  hours), then every `MAINT_REMINDER` (one hour; `0`: never). A maintenance of the default two
+  hours ends before the first reminder.
 - Exit codes: 0, 64 for a usage error, 3 when the state cannot be read or written.
 
 `--format json` prints, for every action:

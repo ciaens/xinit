@@ -18,8 +18,9 @@ A notification is always an entry in the system log. With `MAIL` set, it is also
   once, until a run finds XWiki healthy, and not during a maintenance. The mail holds what the
   resolver of the host answers.
 - `maintenance`: the first reminder comes when the maintenance has lasted `MAINT_REMINDER_AFTER`
-  (one hour), the next ones every `MAINT_REMINDER` (one hour). `MAINT_REMINDER=0` turns them off.
-  With the default two hours of a maintenance, that is one reminder.
+  (two hours), the next ones every `MAINT_REMINDER` (one hour). `MAINT_REMINDER=0` turns them
+  off. A maintenance of the default two hours ends before the first reminder: only a longer one,
+  set with `--for`, is reminded.
 
 ## The system log
 
