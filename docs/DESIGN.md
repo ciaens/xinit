@@ -61,7 +61,7 @@ Non-goals:
 7. **Portable Bash.**
    - Bash ≥ 4.4, coreutils, `curl`, `awk`; `ss` from iproute2.
    - Optional tools: `jcmd` (comes with the JDK), `psql`/`mariadb`/`mysql`, `systemctl`,
-     `journalctl`, a mail transport (`sendmail`-compatible).
+     `journalctl`, a mail server that `curl` can reach by SMTP.
    - Each optional feature degrades with a clear `unknown` result when its tool is missing.
 
 ## 3. Architecture
@@ -146,9 +146,10 @@ and metrics of the implemented checks are in [checks.md](checks.md).
    1. remember the restart, so that a run that dies halfway does not restart again and again;
    2. build a report **before** restarting, since its thread dumps must be taken while XWiki
       hangs;
-   3. send a notification;
+   3. write the notification in the system log;
    4. `systemctl restart <UNIT>` (or `RESTART_CMD`);
-   5. enter `COOLDOWN` (default 15 min, the old `MAINTENANCE_TIME`).
+   5. mail the notification, which says how the restart went;
+   6. enter `COOLDOWN` (default 15 min, the old `MAINTENANCE_TIME`).
 5. After `MAX_RESTARTS` restarts within `MAX_RESTARTS_WINDOW`, it stops restarting and sends one
    escalation ("flapping"), until a run finds XWiki healthy.
 
@@ -186,8 +187,10 @@ the most CPU between two dumps, from the `cpu=` time HotSpot prints for each thr
 configuration files are not copied, and the secrets xinit can read are replaced wherever they
 show. The reference is [reporting.md](reporting.md).
 
-A mail carries the summary (wrapped lines) plus the archive when it is small enough. Webhooks
-carry the summary only.
+A mail carries the summary (lines of 900 characters at most) plus the archive when it is small
+enough. It is sent by `curl` over SMTP, since the periodic job may gain no privilege and the
+`sendmail` of a mail server needs one. Webhooks carry the summary only. The reference is
+[notifications.md](notifications.md).
 
 ### 3.6 systemd integration (`xinit setup`)
 

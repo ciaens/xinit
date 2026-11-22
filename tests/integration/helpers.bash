@@ -297,6 +297,66 @@ unpack() {
   R="/root/xinit-test-report/$(in_env ls /root/xinit-test-report)"
 }
 
+# ---------------------------------------------------------------------------------------------
+# A mail server in the container, which keeps what it is given: tests/integration/stub-smtp.pl.
+
+XT_MAIL_DIR=/root/xinit-test-mail
+# shellcheck disable=SC2034  # read by the tests
+XT_MAIL_URL=smtp://127.0.0.1:2525
+
+# smtp_start [<login>:<password>]: start it, with no mail kept. With a login, it asks for it.
+smtp_start() {
+  in_env_sh "systemctl stop xinit-test-smtp.service 2>/dev/null
+    systemctl reset-failed xinit-test-smtp.service 2>/dev/null
+    rm -rf $XT_MAIL_DIR && mkdir -m 700 $XT_MAIL_DIR &&
+    systemd-run --quiet --unit xinit-test-smtp.service \
+      perl /src/xinit/tests/integration/stub-smtp.pl 2525 $XT_MAIL_DIR $1 &&
+    for try in \$(seq 20); do
+      (exec 3<>/dev/tcp/127.0.0.1/2525) 2>/dev/null && exit 0
+      sleep 0.5
+    done
+    exit 1"
+}
+
+# smtp_stop: stop it, and forget its mails.
+smtp_stop() {
+  in_env_sh "systemctl stop xinit-test-smtp.service 2>/dev/null
+    systemctl reset-failed xinit-test-smtp.service 2>/dev/null
+    rm -rf $XT_MAIL_DIR /root/xinit-test-attached.tar.gz; true"
+}
+
+# mails: how many mails it was given.
+mails() { in_env_sh "ls $XT_MAIL_DIR 2>/dev/null | grep -c '^mail-[0-9]*\.eml\$' || true"; }
+
+# mail <n>: the nth mail, without the CR at the end of its lines.
+mail() { in_env_sh "tr -d '\r' <$XT_MAIL_DIR/mail-$1.eml"; }
+
+# mail_header <n> <name>: a header of the nth mail.
+mail_header() { mail "$1" | sed -n "1,/^\$/s/^$2: //p"; }
+
+# mail_envelope <n>: who the nth mail was from and to, on one line.
+mail_envelope() { in_env_sh "tr '\n' ' ' <$XT_MAIL_DIR/mail-$1.env"; }
+
+# mail_attachment <n>: decode the attachment of the nth mail, in the container, and print where.
+mail_attachment() {
+  in_env_sh "umask 077; tr -d '\r' <$XT_MAIL_DIR/mail-$1.eml |
+    awk '/^Content-Disposition: attachment/ { on = 1; next } on && /^--/ { on = 0 } on' |
+    base64 -d >/root/xinit-test-attached.tar.gz && echo /root/xinit-test-attached.tar.gz"
+}
+
+# host_name: the name of the container, as bash has it.
+host_name() { in_env_sh 'echo "$HOSTNAME"'; }
+
+# journal_fields <since epoch> <event>: the entries xinit logged for an event since then, one
+# "instance check status" line each.
+journal_fields() {
+  in_env_sh "journalctl -t xinit --since @$1 -o json XINIT_EVENT=$2" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    e = json.loads(line)
+    print(e.get("XINIT_INSTANCE", "-"), e.get("XINIT_CHECK", "-"), e.get("XINIT_STATUS", "-"))'
+}
+
 # json <python expression on d>: evaluate it on $output parsed as JSON, and print the result.
 # A null prints as an empty line.
 json() {

@@ -113,6 +113,31 @@
 # How long to wait between two of the three thread dumps of a report.
 #THREADDUMP_INTERVAL=5s
 
+# ---- Notifications ----------------------------------------------------------------------------
+# What xinit does is always a line in the system log (journalctl -t xinit). A restart, restarts
+# that did not help, checks that cannot tell any more, a crash and a maintenance that lasts are
+# also mailed, with the report, when MAIL is set.
+
+# Who gets the mails: addresses separated by spaces or commas. Empty: no mail.
+#MAIL=
+# The sender. Default: xinit@<the name of this host>.
+#MAIL_FROM=
+# The mail server, which curl talks to: smtp://host[:port], or smtps://host[:port] for a server
+# that speaks TLS from the first byte. A host without a mail server names its relay here.
+#MAIL_SMTP_URL=smtp://localhost:25
+# STARTTLS on an smtp:// server. yes: required. no: never, even to log in. auto: required when
+# xinit logs in, so that the password is not sent in clear.
+#MAIL_SMTP_TLS=auto
+# A netrc file with the login and password of the mail server, when it asks for them.
+# Default: /etc/xinit/credentials/smtp.netrc, when it exists. Keep it readable by the user running
+# xinit only (chmod 600). Its content: machine <host of MAIL_SMTP_URL> login <user> password <password>
+#MAIL_SMTP_NETRC=
+# A report larger than this, in kilobytes, is not attached to the mail. 0: never attach.
+#MAIL_ATTACH_MAX=5000
+# The same notification is not mailed again within this time: the next mail says how many were
+# held back. The line in the system log is always written.
+#NOTIFY_REPEAT=1h
+
 # ---- What `xinit setup` installs ----------------------------------------------------------------
 # Run `xinit setup` again after changing one of these.
 
@@ -131,6 +156,10 @@
 # How long `xinit maint on` lasts without --for. A duration is a number of seconds, or numbers
 # with a unit: s, m or min, h, d (90, 15min, 2h, 1h30m).
 #MAINT_DURATION=2h
+# A maintenance that lasts is notified: first when it has lasted MAINT_REMINDER_AFTER, then every
+# MAINT_REMINDER. MAINT_REMINDER=0: never.
+#MAINT_REMINDER=1h
+#MAINT_REMINDER_AFTER=1h
 
 # Where xinit keeps what it has to remember, in one directory per instance.
 #STATE_DIR=/var/lib/xinit

@@ -44,6 +44,9 @@ XINIT_REPORT_SECRET_MIN=8
 
 # The report being built or just built: FILE, DUMPS, OOM, DEADLOCK, ERROR, and while it is
 # built WORK (the temporary directory), KEEP, LINES, INTERVAL, QUERIES.
+# With HOLD=true, set before xinit_report_build, the temporary directory stays until
+# xinit_report_release, and ARCHIVE is the archive in it, NAME its name without .tar.gz: what a
+# mail attaches.
 declare -gA XINIT_REPORT=()
 # Its summary, a text.
 XINIT_REPORT_SUMMARY=""
@@ -464,7 +467,7 @@ _xinit_report_disk() {
 # _xinit_report_dns <directory>: when a check failed because a host name does not resolve, what
 # the resolver of this host says.
 _xinit_report_dns() {
-  local dir="$1" i host hosts=() seen=0 file
+  local dir="$1" i host hosts=() seen=0 file line
   local re_host='^[A-Za-z0-9][A-Za-z0-9._-]*$' re_url='^[a-z]+://([^/:?#@]+)'
   for i in "${!XINIT_RESULT_CHECK[@]}"; do
     [ "${XINIT_RESULT_REASON[$i]}" = dns ] || continue
@@ -495,6 +498,7 @@ _xinit_report_dns() {
       done <"${XINIT_ROOT:-}$file"
     done
   } >"$dir/dns.txt"
+  XINIT_REPORT[DNS]="$(head -n 40 -- "$dir/dns.txt")"
   _xinit_report_section dns ok
 }
 
@@ -562,6 +566,7 @@ _xinit_report_summary() {
   [ -z "${XINIT_REPORT[SYSTEM]}" ] || printf '%s\n' "${XINIT_REPORT[SYSTEM]}"
   [ -z "${XINIT_REPORT[DATABASE]}" ] || printf '%s\n' "${XINIT_REPORT[DATABASE]}"
   [ -z "${XINIT_REPORT[SOCKETS]}" ] || printf 'TCP sockets:\n%s' "${XINIT_REPORT[SOCKETS]}"
+  [ -z "${XINIT_REPORT[DNS]-}" ] || printf '\nName resolution:\n%s\n' "${XINIT_REPORT[DNS]}"
   [ -z "${XINIT_REPORT[THREADS]}" ] || printf '\n%s\n' "${XINIT_REPORT[THREADS]}"
   for section in "${XINIT_REPORT_SECTIONS[@]}"; do
     case "$section" in
@@ -609,6 +614,9 @@ _xinit_report_build() {
   local output="$1" now work name dir archive stored i
   now="$(xinit_now)"
   XINIT_REPORT[FILE]=""
+  XINIT_REPORT[ARCHIVE]=""
+  XINIT_REPORT[NAME]=""
+  XINIT_REPORT[DNS]=""
   XINIT_REPORT[OOM]=false
   XINIT_REPORT_SUMMARY=""
   XINIT_REPORT_SECTIONS=()
@@ -617,7 +625,7 @@ _xinit_report_build() {
     return 1
   fi
   XINIT_REPORT[WORK]="$work"
-  trap _xinit_report_cleanup EXIT
+  xinit_on_exit _xinit_report_cleanup
   name="xinit-report-$XINIT_INSTANCE-$(_xinit_report_time "$now" '%Y%m%dT%H%M%SZ')"
   dir="$work/$name"
   archive="$work/report.tar.gz"
@@ -648,6 +656,8 @@ _xinit_report_build() {
   XINIT_REPORT_SUMMARY="$(cat -- "$dir/summary.txt")" || return 1
   tar -czf "$archive" -C "$work" -- "$name" 2>/dev/null || return 1
   XINIT_REPORT[ERROR]=""
+  XINIT_REPORT[ARCHIVE]="$archive"
+  XINIT_REPORT[NAME]="$name"
   if [ -n "$output" ]; then
     # Never over a file that exists, nor through a link.
     if ! (set -o noclobber && cat -- "$archive" >"$output") 2>/dev/null; then
@@ -679,18 +689,30 @@ xinit_report_build() {
   umask 077
   _xinit_report_build "${1:-}" || rc=$?
   umask "$old_umask"
-  _xinit_report_cleanup
+  # Kept for the one who asked, when there is something to keep.
+  if [ "$rc" -ne 0 ] || [ "${XINIT_REPORT[HOLD]-}" != true ]; then
+    xinit_report_release
+  fi
   [ "$rc" -eq 0 ] || [ -n "${XINIT_REPORT[ERROR]}" ] || XINIT_REPORT[ERROR]="the report could not be written"
   return "$rc"
 }
 
-# _xinit_report_json: print the result of `xinit report` as JSON.
+# xinit_report_release: remove what xinit_report_build kept with HOLD=true.
+xinit_report_release() {
+  _xinit_report_cleanup
+  XINIT_REPORT[ARCHIVE]=""
+  XINIT_REPORT[HOLD]=""
+}
+
+# _xinit_report_json [what became of the mail]: print the result of `xinit report` as JSON.
 _xinit_report_json() {
   local section sep=""
-  printf '{"instance":%s,"report":%s,"status":"%s","oom":%s,"deadlock":%s,"thread_dumps":%s,"sections":{' \
+  local mail=null
+  [ -z "${1:-}" ] || mail="\"$1\""
+  printf '{"instance":%s,"report":%s,"status":"%s","oom":%s,"deadlock":%s,"thread_dumps":%s,"mail":%s,"sections":{' \
     "$(xinit_json_string "$XINIT_INSTANCE")" "$(xinit_json_string "${XINIT_REPORT[FILE]}")" \
     "$(xinit_results_status)" "${XINIT_REPORT[OOM]}" "${XINIT_REPORT[DEADLOCK]:-false}" \
-    "${XINIT_REPORT[DUMPS]:-0}"
+    "${XINIT_REPORT[DUMPS]:-0}" "$mail"
   for section in "${XINIT_REPORT_SECTIONS[@]}"; do
     printf '%s"%s":%s' "$sep" "${section%%$'\t'*}" "$(xinit_json_string "${section#*$'\t'}")"
     sep=","
@@ -698,10 +720,11 @@ _xinit_report_json() {
   printf '}}\n'
 }
 
-# xinit_cmd_report [--output FILE] [--format text|json]: the `xinit report` command. With
-# --store, which xinit uses itself: store the archive read from the standard input.
+# xinit_cmd_report [--output FILE] [--send] [--format text|json]: the `xinit report` command.
+# With --send, the report is mailed to MAIL. With --store, which xinit uses itself: store the
+# archive read from the standard input.
 xinit_cmd_report() {
-  local format=text output="" store=false name names=()
+  local format=text output="" store=false send=false name names=() mail="" rc=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --output)
@@ -717,6 +740,7 @@ xinit_cmd_report() {
         ;;
       --format=*) format="${1#--format=}" && shift ;;
       --store) store=true && shift ;;
+      --send) send=true && shift ;;
       *) xinit_die "report: unexpected argument $1" "$XINIT_EXIT_USAGE" ;;
     esac
   done
@@ -725,6 +749,12 @@ xinit_cmd_report() {
     *) xinit_die "report: unknown format $format (text, json)" "$XINIT_EXIT_USAGE" ;;
   esac
   xinit_report_config || xinit_die "${XINIT_REPORT[ERROR]}"
+  if [ "$send" = true ]; then
+    [ "$store" = false ] || xinit_die "report: --send does not go with --store" "$XINIT_EXIT_USAGE"
+    xinit_notify_config || xinit_die "${XINIT_NOTIFY[ERROR]}"
+    [ "${#XINIT_NOTIFY_RCPT[@]}" -gt 0 ] ||
+      xinit_die "report: --send needs MAIL, the addresses to send to (for one run: -o MAIL=...)"
+  fi
   if [ "$store" = true ]; then
     xinit_state_is_mine || xinit_die "report: the state in ${XINIT_CFG[STATE_DIR]} belongs to another user"
     umask 077
@@ -742,11 +772,33 @@ xinit_cmd_report() {
     xinit_layout_explain_missing
     return "$XINIT_EXIT_UNKNOWN"
   fi
+  XINIT_REPORT[CAUSE]=""
+  XINIT_REPORT[HOLD]="$send"
   xinit_report_build "$output" || xinit_die "report: ${XINIT_REPORT[ERROR]}"
+  if [ "$send" = true ]; then
+    # Root mails what it built: it opens nothing in the directory of another user.
+    xinit_notify_reset
+    XINIT_NOTIFY[TITLE]="report"
+    XINIT_NOTIFY[STATUS]="$(xinit_results_status)"
+    XINIT_NOTIFY[BODY]="$XINIT_REPORT_SUMMARY"
+    XINIT_NOTIFY[REPORT]="${XINIT_REPORT[FILE]}"
+    XINIT_NOTIFY[ATTACH]="${XINIT_REPORT[ARCHIVE]}"
+    XINIT_NOTIFY[ATTACH_NAME]="${XINIT_REPORT[NAME]}.tar.gz"
+    # Someone asked for it: it is sent whatever was sent before.
+    XINIT_NOTIFY[UNLIMITED]=true
+    ! xinit_notify_oom || XINIT_NOTIFY[OOM]=true
+    xinit_notify report "Report asked by $(xinit_state_text "$(xinit_invoker)" 64)." || rc="$XINIT_EXIT_UNKNOWN"
+    mail="${XINIT_NOTIFY[MAIL]}"
+    xinit_report_release
+  fi
   if [ "$format" = json ]; then
-    _xinit_report_json
+    _xinit_report_json "$mail"
   else
     printf '%s\n\nreport: %s\n' "$XINIT_REPORT_SUMMARY" "${XINIT_REPORT[FILE]}"
+    case "$mail" in
+      sent) printf 'mail: sent to %s\n' "${XINIT_NOTIFY_RCPT[*]}" ;;
+      failed) xinit_log error "the mail was not sent: ${XINIT_NOTIFY[ERROR]}" ;;
+    esac
   fi
-  return 0
+  return "$rc"
 }

@@ -110,7 +110,11 @@ Unit tests (`tests/unit/`) run xinit on the host, against the real files of each
   variables change one answer: see `tests/unit/helpers.bash`.
 - `tests/fixtures/journal/` holds the journal lines of real out-of-memory faults, and three
   real thread dumps taken five seconds apart, cut down to some twenty threads.
-- `use_state` gives xinit state and runtime directories of its own, a fake `logger`, and a fixed
+- The fake `curl` keeps each mail xinit gives it, with the options it read for it: `mails`,
+  `mail`, `mail_header`, `mail_options` and `mail_attachment` read them. `FAKE_SMTP_EXIT` makes
+  the sending fail.
+- `use_state` gives xinit state and runtime directories of its own, a fake `logger`, which
+  records the fields of a journal entry with its calls, and a fixed
   clock: xinit reads the time from `XINIT_TEST_NOW` when it is set, so a test moves in time without
   waiting. Alone, it is for the commands that need no XWiki installation. After `use_fixture`, it
   is for `xinit watch`, whose scenarios also run as unit tests: `kill` and `sleep` are fakes, so no
@@ -222,7 +226,7 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | S-SEC-01 | 2 | `setup`, several runs | state and credentials are for their owner only; the database password is in the credentials file and nowhere else xinit wrote, and never in `/proc/*/cmdline` |
 | S-MULTI-01 | 2 | a second instance whose "wiki" is a stub HTTP service | each has its job and its state; the stub failing gets the stub alone restarted; a maintenance and an undo of one leave the other |
 
-### Diagnostics and notifications: `50-report.bats`
+### Diagnostics and notifications: `70-report.bats`, `80-notify.bats` (S-NOTIFY-09 in `60-setup.bats`)
 | Id | Phase | Setup | Expected |
 |---|---|---|---|
 | S-REPORT-01 | 3 | healthy | archive 0600, with the layout, the results, the thread dumps, the end of the journal, the activity of the database; a stopped XWiki still gives a report, without thread dumps |
@@ -231,10 +235,15 @@ DESIGN.md's statuses and exit codes: 0 ok, 1 warn, 2 crit, 3 unknown.
 | S-REPORT-04 | 3 | 30 concurrent requests on a slow page | summary of the most frequent URLs across request threads lists the slow page first |
 | S-REPORT-05 | 3 | no `jcmd` (Debian packages ship a JRE) | three thread dumps taken through `SIGQUIT` and read from the journal |
 | S-REPORT-06 | 3 | after `xinit setup`, `xinit report` by root | the archive is stored by the user of the job, and belongs to it |
-| S-NOTIFY-01 | 3 | S-WATCH-01 with a local MTA | one mail; the subject has the instance and the check; lines ≤ 900 chars |
-| S-NOTIFY-02 | 3 | heap OOM + restart | the subject has `[OOM]` |
+| S-NOTIFY-01 | 3 | requests that do not end, `RESTART_AFTER=1`, a mail server that keeps its mails | XWiki is restarted; one mail, sent after the restart; the subject has the instance, the host and the check; lines end with CR LF and are ≤ 900 chars; the summary has the thread dumps, the URLs and the database; the report is attached; the database password is nowhere; the journal entry has its fields |
+| S-NOTIFY-02 | 3 | heap OOM + restart, then a report by mail | the subject has `[OOM]`; after the restart it no longer has |
 | S-NOTIFY-03 | 3 | webhook to a local listener | one POST, valid JSON |
-| S-NOTIFY-04 | 3 | the same failure twice within `NOTIFY_REPEAT` | one notification |
+| S-NOTIFY-04 | 3 | the same notification twice within `NOTIFY_REPEAT` | one mail, two journal entries; `NOTIFY_REPEAT=0` mails each one |
+| S-NOTIFY-05 | 3 | no mail server | XWiki is restarted all the same; the journal says the mail was not sent |
+| S-NOTIFY-06 | 3 | a maintenance that lasts | no reminder before `MAINT_REMINDER_AFTER`; then one per `MAINT_REMINDER` |
+| S-NOTIFY-07 | 3 | a `BASE_URL` whose host name does not resolve | reason `cannot-check` at `RESTART_AFTER` runs; one notification, with what the resolver says; no restart |
+| S-NOTIFY-08 | 3 | `report --send`, a mail server that asks for a login | no mail and no login without TLS; with `MAIL_SMTP_TLS=no`, the login and the mail, the report attached; a wrong password gives exit 3 |
+| S-NOTIFY-09 | 3 | `xinit setup` with `MAIL`, the JVM killed twice, then a page that always answers 503 | the crash unit mails the first crash and holds the second back; the job mails its restart with the report |
 | S-PROM-01 | 3 | `PROM_TEXTFILE_DIR` set | valid exposition format (`promtool check metrics` when available) |
 
 ### Containers: `60-container.bats` (Phase 4; uses the official `xwiki` image, not the systemd test image)

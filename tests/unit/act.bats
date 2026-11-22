@@ -144,7 +144,7 @@ RESTART_CMD=myrestart wiki"
 @test "notify: without a word from systemd, the crash is still notified" {
   FAKE_JOURNAL_DENIED=1 run "$XINIT" notify crash
   [ "$status" -eq 0 ]
-  [[ "$(calls logger)" == *"notification (crash): tomcat10.service stopped unexpectedly" ]]
+  calls logger | grep -qx "MESSAGE=instance default: notification (crash): tomcat10.service stopped unexpectedly"
 }
 
 @test "notify: usage errors exit 64" {

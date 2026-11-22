@@ -21,6 +21,7 @@ setup() {
 }
 
 teardown() {
+  smtp_stop
   xinit -i default setup --undo
   xinit -i stub setup --undo
   heal_all
@@ -216,6 +217,55 @@ as_job() { in_env setpriv --reuid=xinit --regid=xinit --init-groups "$@"; }
   [ "$output" = restarted ]
   wait_for 30 logged "$start" "notification (crash): $XT_UNIT stopped unexpectedly"
   wait_healthy 300
+}
+
+@test "S-NOTIFY-09 once set up, a crash is mailed by its unit, once, and the job mails its restart" {
+  local pid start host
+  host="$(host_name)"
+  smtp_start
+  conf "MAIL=admin@example.org" "MAIL_SMTP_URL=$XT_MAIL_URL"
+  xinit setup --format json
+  [ "$status" -eq 0 ]
+  wait_for 180 has_run
+  # The job would restart XWiki too, later: here systemd has to.
+  in_env systemctl stop xinit-watch@default.timer
+  pid="$(jvm_pid)"
+  start="$(date +%s)"
+  fault_kill_jvm
+  restarted() { local now; now="$(jvm_pid)"; [ -n "$now" ] && [ "$now" != "$pid" ]; }
+  wait_for 90 restarted
+  one_mail() { [ "$(mails)" -ge 1 ]; }
+  wait_for 30 one_mail
+  [ "$(mail_header 1 Subject)" = "[xinit] default on $host: XWiki crashed" ]
+  [ "$(mail_envelope 1)" = "from xinit@$host to admin@example.org " ]
+  mail 1 | grep -q "^$XT_UNIT stopped unexpectedly"
+  [ "$(journal_fields "$start" crash)" = "default - crit" ]
+  # The unit, confined, remembers it where the job keeps its state.
+  [ "$(in_env stat -c '%U %a' /var/lib/xinit/default/notify)" = "xinit 600" ]
+  # A second crash within the hour is in the system log, not in the mailbox.
+  wait_healthy 300
+  pid="$(jvm_pid)"
+  fault_kill_jvm
+  wait_for 90 restarted
+  two_logged() { [ "$(count_logged "$start" "notification (crash)")" = 2 ]; }
+  wait_for 30 two_logged
+  wait_healthy 300
+  [ "$(mails)" = 1 ]
+
+  # The job, confined too, mails the restart it asks for, with its report.
+  pid="$(jvm_pid)"
+  in_env_sh "printf '%s\n' 'HTTP_PATH=$(fault_url 'action=status&code=503')' RESTART_AFTER=1 >> /etc/xinit/xinit.conf"
+  in_env systemctl start xinit-watch@default.timer
+  wait_for 210 has_restarted
+  two_mails() { [ "$(mails)" -ge 2 ]; }
+  wait_for 120 two_mails
+  [ "$(mail_header 2 Subject)" = "[xinit] default on $host: XWiki restarted (http)" ]
+  mail 2 | grep -qx "The restart was done."
+  mail 2 | grep -q "^Report: /var/lib/xinit/default/reports/report-.*.tar.gz (attached)$"
+  in_env cmp "$(mail_attachment 2)" "$(in_env_sh "ls /var/lib/xinit/default/reports/report-*.tar.gz")"
+  in_env systemctl stop xinit-watch@default.timer
+  wait_healthy 300
+  [ "$(jvm_pid)" != "$pid" ]
 }
 
 @test "S-WARMUP-01 the first requests are made after each start, to every URL" {

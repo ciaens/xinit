@@ -322,6 +322,9 @@ User=$user
 Group=$user
 SupplementaryGroups=$groups
 ExecStart=$self -i $i notify crash
+# It remembers what it notified, not to say it again and again.
+StateDirectory=$state_name $state_name/$i
+StateDirectoryMode=0700
 $sandbox"
 
   _xinit_setup_file "$systemd/xinit-warmup@$i.service" 0644 "" 0 \

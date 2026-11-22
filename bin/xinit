@@ -87,7 +87,7 @@ Commands:
   layout     show how this XWiki installation was detected
   check      run the checks (read-only)
   watch      run the checks and restart XWiki after repeated failures (--dry-run)
-  report     build a diagnostics report (--output FILE)
+  report     build a diagnostics report (--output FILE, --send to mail it)
   maint      maintenance mode: on [--for DURATION] [--reason TEXT] | off | status
   setup      install the systemd units that run xinit by itself (--dry-run, --undo)
   version    print the version

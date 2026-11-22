@@ -51,3 +51,20 @@ xinit_log_journal() {
   command -v logger >/dev/null || return 0
   logger -t xinit -- "instance $XINIT_INSTANCE: $*" 2>/dev/null || true
 }
+
+# The functions to call when xinit ends, also when it fails: they remove temporary files.
+XINIT_EXIT_HOOKS=()
+
+# _xinit_exit_hooks: call them.
+_xinit_exit_hooks() {
+  local hook
+  for hook in "${XINIT_EXIT_HOOKS[@]}"; do
+    "$hook" || true
+  done
+}
+
+# xinit_on_exit <function>: call it when xinit ends.
+xinit_on_exit() {
+  [[ " ${XINIT_EXIT_HOOKS[*]} " == *" $1 "* ]] || XINIT_EXIT_HOOKS+=("$1")
+  trap _xinit_exit_hooks EXIT
+}

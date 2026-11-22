@@ -46,10 +46,13 @@ XINIT_WATCH_STUCK=1200
 
 # The state of the instance, as stored: FAILURES, FAILED, RESULTS (check:status:reason of the
 # last run), LAST_RUN, LAST_RESTART, RESTARTS (the times of the restarts in the window),
-# ESCALATED.
+# ESCALATED, UNKNOWNS (the runs in a row in which a check could not tell), BLIND (when that was
+# notified).
 declare -gA XINIT_WATCH_STATE=()
 # This run: ACTION (none, restart), REASON, FAILED (the failed checks, with their reasons),
-# FAILED_CHECKS (their names), COOLDOWN_LEFT, RESTART_OK, REPORT.
+# FAILED_CHECKS (their names), UNKNOWN and UNKNOWN_CHECKS (the same for the checks that could
+# not tell), COOLDOWN_LEFT, RESTART_OK, REPORT, NOTIFIED (the event notified) and MAIL (what
+# became of its mail).
 declare -gA XINIT_WATCH=()
 
 # xinit_watch_state_file: print the path of the state file.
@@ -61,7 +64,7 @@ _xinit_watch_state_load() {
   local rc=0 key time times=""
   xinit_state_read "$(xinit_watch_state_file)" XINIT_WATCH_STATE || rc=$?
   [ "$rc" -ne 2 ] || return 1
-  for key in FAILURES LAST_RUN LAST_RESTART ESCALATED; do
+  for key in FAILURES LAST_RUN LAST_RESTART ESCALATED UNKNOWNS BLIND; do
     if [[ "${XINIT_WATCH_STATE[$key]-}" =~ ^[0-9]{1,12}$ ]]; then
       XINIT_WATCH_STATE[$key]="$((10#${XINIT_WATCH_STATE[$key]}))"
     else
@@ -84,13 +87,15 @@ _xinit_watch_state_save() {
     "LAST_RUN=${XINIT_WATCH_STATE[LAST_RUN]}" \
     "LAST_RESTART=${XINIT_WATCH_STATE[LAST_RESTART]}" \
     "RESTARTS=${XINIT_WATCH_STATE[RESTARTS]}" \
-    "ESCALATED=${XINIT_WATCH_STATE[ESCALATED]}"
+    "ESCALATED=${XINIT_WATCH_STATE[ESCALATED]}" \
+    "UNKNOWNS=${XINIT_WATCH_STATE[UNKNOWNS]}" \
+    "BLIND=${XINIT_WATCH_STATE[BLIND]}"
 }
 
 # _xinit_watch_classify <check...>: look at the results of the checks that count. Sets
 # XINIT_WATCH[FAILED] and [FAILED_CHECKS], and prints failed, unknown or healthy.
 _xinit_watch_classify() {
-  local name i failed="" names="" unknown=0 results=""
+  local name i failed="" names="" unknown="" unknown_names="" results=""
   for i in "${!XINIT_RESULT_CHECK[@]}"; do
     results+="${results:+ }${XINIT_RESULT_CHECK[$i]}:${XINIT_RESULT_STATUS[$i]}:${XINIT_RESULT_REASON[$i]}"
   done
@@ -103,15 +108,20 @@ _xinit_watch_classify() {
           failed+="${failed:+, }$name (${XINIT_RESULT_REASON[$i]})"
           names+="${names:+ }$name"
           ;;
-        unknown) unknown=1 ;;
+        unknown)
+          unknown+="${unknown:+, }$name (${XINIT_RESULT_REASON[$i]})"
+          unknown_names+="${unknown_names:+ }$name"
+          ;;
       esac
     done
   done
   XINIT_WATCH[FAILED]="$failed"
   XINIT_WATCH[FAILED_CHECKS]="$names"
+  XINIT_WATCH[UNKNOWN]="$unknown"
+  XINIT_WATCH[UNKNOWN_CHECKS]="$unknown_names"
   if [ -n "$failed" ]; then
     XINIT_WATCH[HEALTH]=failed
-  elif [ "$unknown" -eq 1 ]; then
+  elif [ -n "$unknown" ]; then
     XINIT_WATCH[HEALTH]=unknown
   else
     XINIT_WATCH[HEALTH]=healthy
@@ -120,9 +130,11 @@ _xinit_watch_classify() {
 
 # _xinit_watch_json: print the "watch" member of the JSON output.
 _xinit_watch_json() {
-  local name sep="" report=null ok=null
+  local name sep="" report=null ok=null notification=null
   [ -z "${XINIT_WATCH[REPORT]-}" ] || report="$(xinit_json_string "${XINIT_WATCH[REPORT]}")"
   [ -z "${XINIT_WATCH[RESTART_OK]-}" ] || ok="${XINIT_WATCH[RESTART_OK]}"
+  [ -z "${XINIT_WATCH[NOTIFIED]-}" ] ||
+    notification="{\"event\":\"${XINIT_WATCH[NOTIFIED]}\",\"mail\":\"${XINIT_WATCH[MAIL]:-off}\"}"
   printf '"watch":{"action":"%s","reason":"%s","dry_run":%s,"failures":%s,"restart_after":%s,' \
     "${XINIT_WATCH[ACTION]}" "${XINIT_WATCH[REASON]}" "${XINIT_WATCH[DRY_RUN]}" \
     "${XINIT_WATCH_STATE[FAILURES]:-0}" "${XINIT_WATCH[RESTART_AFTER]:-0}"
@@ -133,7 +145,7 @@ _xinit_watch_json() {
   done
   printf '],"restarts":%s,"max_restarts":%s,"cooldown_remaining_seconds":%s,' \
     "${XINIT_WATCH[RESTARTS]:-0}" "${XINIT_WATCH[MAX_RESTARTS]:-0}" "${XINIT_WATCH[COOLDOWN_LEFT]:-0}"
-  printf '"restart_ok":%s,"report":%s}' "$ok" "$report"
+  printf '"restart_ok":%s,"report":%s,"notification":%s}' "$ok" "$report" "$notification"
 }
 
 # _xinit_watch_print <format>: print the results of the checks, and what this run did.
@@ -153,7 +165,7 @@ _xinit_watch_print() {
 _xinit_watch_decide() {
   local now="$1" after="${XINIT_WATCH[RESTART_AFTER]}" cooldown="${XINIT_WATCH[COOLDOWN]}"
   local max="${XINIT_WATCH[MAX_RESTARTS]}" window="${XINIT_WATCH[WINDOW]}"
-  local time kept="" count=0 failures since rc
+  local time kept="" count=0 failures since rc unknowns
   XINIT_WATCH[ACTION]=none
   XINIT_WATCH[WAS_FAILING]="${XINIT_WATCH_STATE[FAILURES]}"
   XINIT_WATCH_STATE[LAST_RUN]="$now"
@@ -171,17 +183,34 @@ _xinit_watch_decide() {
     healthy)
       XINIT_WATCH_STATE[FAILURES]=0
       XINIT_WATCH_STATE[ESCALATED]=0
+      XINIT_WATCH_STATE[UNKNOWNS]=0
+      XINIT_WATCH_STATE[BLIND]=0
       XINIT_WATCH[REASON]=healthy
       XINIT_WATCH[MESSAGE]="no check that counts has failed"
       return 0
       ;;
     unknown)
-      # Not a failure, and not a proof of health: the count stays as it is.
+      # Not a failure, and not a proof of health: the count of failures stays as it is.
+      unknowns=$((XINIT_WATCH_STATE[UNKNOWNS] + 1))
+      XINIT_WATCH_STATE[UNKNOWNS]="$unknowns"
       XINIT_WATCH[REASON]=unknown
-      XINIT_WATCH[MESSAGE]="a check could not tell: not counted as a failure"
+      XINIT_WATCH[MESSAGE]="${XINIT_WATCH[UNKNOWN]} could not tell: not counted as a failure"
+      [ "$unknowns" -ge "$after" ] || return 0
+      # Nobody watches XWiki any more, and a restart would not help: say so, once.
+      XINIT_WATCH[REASON]=cannot-check
+      XINIT_WATCH[MESSAGE]="${XINIT_WATCH[UNKNOWN]} could not tell in $unknowns runs in a row: XWiki is not watched, and nothing is done"
+      if [ "${XINIT_WATCH_STATE[BLIND]}" -eq 0 ]; then
+        rc=0
+        xinit_maint_load || rc=$?
+        if [ "$rc" -eq 1 ] || { [ "$rc" -eq 0 ] && ! xinit_maint_active; }; then
+          XINIT_WATCH_STATE[BLIND]="$now"
+          XINIT_WATCH[BLIND]=1
+        fi
+      fi
       return 0
       ;;
   esac
+  XINIT_WATCH_STATE[UNKNOWNS]=0
   failures=$((XINIT_WATCH_STATE[FAILURES] + 1))
   XINIT_WATCH_STATE[FAILURES]="$failures"
 
@@ -220,10 +249,87 @@ _xinit_watch_decide() {
   fi
 }
 
+# _xinit_watch_notify <restart|flapping|cannot-check>: build a report, notify, and for a restart
+# do it. Returns 3 when a restart failed. A report or a mail that fails stops nothing.
+_xinit_watch_notify() {
+  local event="$1" message="${XINIT_WATCH[MESSAGE]}" rc=0
+  # The report first: its thread dumps show what hangs, and are gone with the JVM. It is kept
+  # until the mail has left with it.
+  XINIT_REPORT[CAUSE]="$message"
+  XINIT_REPORT[HOLD]=true
+  xinit_notify_reset
+  XINIT_NOTIFY[STATUS]="$(xinit_results_status)"
+  if xinit_report_build; then
+    XINIT_WATCH[REPORT]="${XINIT_REPORT[FILE]}"
+    xinit_log_journal "report stored in ${XINIT_REPORT[FILE]}"
+    XINIT_NOTIFY[BODY]="$XINIT_REPORT_SUMMARY"
+    XINIT_NOTIFY[REPORT]="${XINIT_REPORT[FILE]}"
+    XINIT_NOTIFY[ATTACH]="${XINIT_REPORT[ARCHIVE]}"
+    XINIT_NOTIFY[ATTACH_NAME]="${XINIT_REPORT[NAME]}.tar.gz"
+  else
+    xinit_log_journal "no report: ${XINIT_REPORT[ERROR]}"
+    XINIT_NOTIFY[BODY]="$(xinit_results_print text)"
+  fi
+  if [ "$event" = cannot-check ]; then
+    XINIT_NOTIFY[CHECKS]="${XINIT_WATCH[UNKNOWN_CHECKS]}"
+    XINIT_NOTIFY[TITLE]="cannot check XWiki"
+  else
+    XINIT_NOTIFY[CHECKS]="${XINIT_WATCH[FAILED_CHECKS]}"
+  fi
+  ! xinit_notify_oom || XINIT_NOTIFY[OOM]=true
+  XINIT_WATCH[NOTIFIED]="$event"
+  # The line in the log before the restart, the mail after: it says how the restart went, and a
+  # slow mail server does not make XWiki wait.
+  xinit_notify_journal "$event" "$message"
+  if [ "$event" = restart ]; then
+    if xinit_act_restart; then
+      XINIT_WATCH[RESTART_OK]=true
+      XINIT_NOTIFY[TITLE]="XWiki restarted"
+      message+=$'\n'"The restart was done."
+    else
+      XINIT_WATCH[RESTART_OK]=false
+      xinit_log_journal "the restart failed: $XINIT_ACT_ERROR"
+      xinit_log error "the restart failed: $XINIT_ACT_ERROR"
+      XINIT_NOTIFY[TITLE]="the restart of XWiki failed"
+      message+=$'\n'"The restart failed: $XINIT_ACT_ERROR"
+      rc="$XINIT_EXIT_UNKNOWN"
+    fi
+  elif [ "$event" = flapping ]; then
+    XINIT_NOTIFY[TITLE]="XWiki still fails after restarts"
+  fi
+  xinit_notify_mail "$event" "$message" || true
+  XINIT_WATCH[MAIL]="${XINIT_NOTIFY[MAIL]}"
+  xinit_report_release
+  return "$rc"
+}
+
+# _xinit_watch_remind <now>: while a maintenance is on, remind of it from time to time.
+_xinit_watch_remind() {
+  local now="$1" every="${XINIT_WATCH[REMINDER]}" after="${XINIT_WATCH[REMINDER_AFTER]}" since left
+  [ "$every" -gt 0 ] || return 0
+  xinit_maint_load || return 0
+  xinit_maint_active || return 0
+  since="${XINIT_MAINTENANCE[SINCE]}"
+  [ "$((now - since))" -ge "$after" ] || return 0
+  ! xinit_notify_recent maintenance "$since" "$every" "$now" || return 0
+  left=$((XINIT_MAINTENANCE[UNTIL] - now))
+  xinit_notify_reset
+  XINIT_NOTIFY[TITLE]="still in maintenance"
+  XINIT_NOTIFY[SIGNATURE]="$since"
+  # This function counts the time itself.
+  XINIT_NOTIFY[UNLIMITED]=true
+  XINIT_NOTIFY[BODY]="$(xinit_results_print text)"
+  xinit_notify maintenance "In maintenance for $(xinit_duration_text "$((now - since))"), set by ${XINIT_MAINTENANCE[BY]:-unknown}${XINIT_MAINTENANCE[REASON]:+ (${XINIT_MAINTENANCE[REASON]})}: xinit does not restart XWiki. It ends in $(xinit_duration_text "$left"), or with 'xinit maint off'." || true
+  XINIT_WATCH[NOTIFIED]=maintenance
+  XINIT_WATCH[MAIL]="${XINIT_NOTIFY[MAIL]}"
+  # Also when the mail did not leave: the next reminder is not for the next minute.
+  xinit_notify_remember maintenance "$since" "$now" 0 || true
+}
+
 # xinit_cmd_watch [--dry-run] [--format text|json]: the `xinit watch` command. It exits 0 when it
 # did its work, whatever the state of XWiki, and 3 when it could not.
 xinit_cmd_watch() {
-  local format=text dry=false name names=() acting=() now rc=0
+  local format=text dry=false name names=() acting=() now rc=0 event=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run) dry=true && shift ;;
@@ -253,7 +359,12 @@ xinit_cmd_watch() {
     xinit_die "COOLDOWN is not a duration: ${XINIT_CFG[COOLDOWN]-}"
   XINIT_WATCH[WINDOW]="$(xinit_duration_seconds "${XINIT_CFG[MAX_RESTARTS_WINDOW]-}")" ||
     xinit_die "MAX_RESTARTS_WINDOW is not a duration: ${XINIT_CFG[MAX_RESTARTS_WINDOW]-}"
+  XINIT_WATCH[REMINDER]="$(xinit_duration_seconds "${XINIT_CFG[MAINT_REMINDER]-}")" ||
+    xinit_die "MAINT_REMINDER is not a duration: ${XINIT_CFG[MAINT_REMINDER]-}"
+  XINIT_WATCH[REMINDER_AFTER]="$(xinit_duration_seconds "${XINIT_CFG[MAINT_REMINDER_AFTER]-}")" ||
+    xinit_die "MAINT_REMINDER_AFTER is not a duration: ${XINIT_CFG[MAINT_REMINDER_AFTER]-}"
   xinit_report_config || xinit_die "${XINIT_REPORT[ERROR]}"
+  xinit_notify_config || xinit_die "${XINIT_NOTIFY[ERROR]}"
   for name in ${XINIT_CFG[ACT_ON]//,/ }; do
     acting+=("$name")
   done
@@ -315,28 +426,17 @@ xinit_cmd_watch() {
   elif [ "${XINIT_WATCH[HEALTH]}" = healthy ] && [ "${XINIT_WATCH[WAS_FAILING]}" -gt 0 ]; then
     xinit_log_journal "healthy again, after ${XINIT_WATCH[WAS_FAILING]} failed runs"
   fi
-  if [ -n "${XINIT_WATCH[ESCALATE]-}" ]; then
-    xinit_notify flapping "${XINIT_WATCH[MESSAGE]}"
-  fi
   if [ "${XINIT_WATCH[ACTION]}" = restart ]; then
-    # The report first: its thread dumps show what hangs, and are gone with the JVM.
-    XINIT_REPORT[CAUSE]="${XINIT_WATCH[MESSAGE]}"
-    if xinit_report_build; then
-      XINIT_WATCH[REPORT]="${XINIT_REPORT[FILE]}"
-      xinit_log_journal "report stored in ${XINIT_REPORT[FILE]}"
-    else
-      xinit_log_journal "no report: ${XINIT_REPORT[ERROR]}"
-    fi
-    xinit_notify restart "${XINIT_WATCH[MESSAGE]}"
-    if xinit_act_restart; then
-      XINIT_WATCH[RESTART_OK]=true
-    else
-      XINIT_WATCH[RESTART_OK]=false
-      xinit_log_journal "the restart failed: $XINIT_ACT_ERROR"
-      xinit_log error "the restart failed: $XINIT_ACT_ERROR"
-      rc="$XINIT_EXIT_UNKNOWN"
-    fi
+    event=restart
+  elif [ -n "${XINIT_WATCH[ESCALATE]-}" ]; then
+    event=flapping
+  elif [ -n "${XINIT_WATCH[BLIND]-}" ]; then
+    event=cannot-check
   fi
+  if [ -n "$event" ]; then
+    _xinit_watch_notify "$event" || rc=$?
+  fi
+  _xinit_watch_remind "$now"
   _xinit_watch_print "$format"
   return "$rc"
 }

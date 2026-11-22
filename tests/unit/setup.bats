@@ -88,6 +88,8 @@ change_of() { json "[f['change'] for f in d['files'] if f['path'] == '$1'][0]"; 
   # The other units are not root.
   grep -qxF "User=xinit" "$SYSTEMD/xinit-notify@default.service"
   grep -qxF "ExecStart=$XINIT -i default notify crash" "$SYSTEMD/xinit-notify@default.service"
+  # It remembers what it notified, where the periodic job does.
+  grep -qxF "StateDirectory=xinit xinit/default" "$SYSTEMD/xinit-notify@default.service"
   grep -qxF "User=xinit" "$SYSTEMD/xinit-warmup@default.service"
   grep -qxF "PartOf=tomcat10.service" "$SYSTEMD/xinit-warmup@default.service"
   grep -qxF "After=tomcat10.service" "$SYSTEMD/xinit-warmup@default.service"

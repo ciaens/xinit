@@ -64,21 +64,41 @@ Built as [../reporting.md](../reporting.md) describes. What differs from the fir
   JSON has `report` in place of `thread_dump`.
 - The out-of-memory part is the `oom` check, whose result is in the report (`oom` in the JSON,
   for the `[OOM]` prefix of a subject).
-- The DNS trace (XINIT-5) is `dns.txt`. Whether a host name that stops resolving is notified is
-  decided with the notifications.
-- `--send` comes with the notifications.
+- The DNS trace (XINIT-5) is `dns.txt`, and it is in the summary too.
 
-### 3.2 Notifications (`lib/xinit/notify/`)
-- `mail`: uses `sendmail -t` (works with postfix, exim, msmtp-mta, nullmailer). The body is a text
-  summary with lines wrapped at 900 characters. The bundle is attached when it is under
-  `MAIL_ATTACH_MAX`. `MAIL` accepts a list (XINIT-4).
+### 3.2 Notifications (`lib/xinit/notify.sh`)
+
+The journal entry and the mail are done, as [../notifications.md](../notifications.md) describes.
+Decided with the project lead before the code:
+- **The mail of a restart leaves after the restart.** The report is built first and the journal
+  entry is written first. The mail then says how the restart went, and a slow mail server does
+  not lengthen the outage.
+- **TLS**: `smtps://` and STARTTLS are both supported. `MAIL_SMTP_TLS` is `auto` (STARTTLS
+  required when xinit logs in), `yes` or `no`.
+- **A host name that stops resolving is notified (XINIT-5)**, as the event `cannot-check`: the
+  checks that count could not tell for `RESTART_AFTER` runs in a row. Once per episode, with a
+  report. It covers the other cases in which xinit no longer sees XWiki.
+- **The crash unit writes in the state directory**, to hold back the mails of a crash loop. The
+  report of a crash comes with the other changes of `xinit setup`.
+- **The maintenance reminder waits for `MAINT_REMINDER_AFTER`** (one hour), then comes every
+  `MAINT_REMINDER`.
+
+Found while coding:
+- `curl` sends the message as it is: xinit writes the CR LF line ends itself. Without them a
+  line that starts with a dot is not escaped either.
+- `curl` gives the mail server the name of the uploaded file as its own name (`EHLO`), unless
+  the URL has a path: xinit puts the host name there.
+- `curl` reads the login of an SMTP server from a netrc file, as for HTTP.
+- `flapping` and `cannot-check` come with a report too: the same code path as a restart.
+- `xinit report --send` is the report by mail (XINIT-4): to the `MAIL` list, or to
+  `-o MAIL=…` for one run.
+
+Still to do in this task:
 - `webhook`: a JSON POST to `WEBHOOK_URL`, with templates for generic, Slack/Mattermost and
   Matrix. The secret comes from the credentials.
-- `journal`: always on; structured fields (`XINIT_INSTANCE`, `XINIT_CHECK`, `XINIT_STATUS`).
-- Rate limiting: identical notifications are not repeated within `NOTIFY_REPEAT`.
-- The maintenance reminder (from 1.3) is sent through the same path.
-- `xinit-notify@.service` is the `OnFailure=` target from Phase 2. It runs `xinit report --send`
-  with the reason taken from the failing unit's `Result`/`ExecMainStatus`.
+- `xinit-notify@.service` builds a report of the crash.
+- `xinit setup` warns when the user of the job cannot read the netrc file of the mail server: the
+  job then sends without a login.
 
 ### 3.3 Prometheus textfile
 `--format prom`, plus `PROM_TEXTFILE_DIR`: after each `watch`, it writes `xinit.prom` atomically
@@ -90,9 +110,9 @@ Built as [../reporting.md](../reporting.md) describes. What differs from the fir
   `copytruncate`. This is optional, and `config` checks for it.
 
 ## Acceptance
-- A hung-JVM scenario gives a mail captured by a local test MTA in the test image, with three
-  thread dumps, the URL summary, the DB activity and no secrets. `grep` checks against the known
-  test passwords prove the redaction.
+- A hung-XWiki scenario gives a mail captured by a mail server stub in the test container, with
+  three thread dumps, the URL summary, the DB activity and no secrets. `grep` checks against the
+  known test passwords prove the redaction. (S-NOTIFY-01)
 - A kernel or heap OOM scenario gives a subject with `[OOM]`, and an old OOM from before the last
-  start does **not**.
+  start does **not**. (S-NOTIFY-02)
 - A webhook scenario sends a POST to a local `nc`/python listener, with the expected JSON.

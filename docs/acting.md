@@ -29,7 +29,7 @@ What it writes:
 | `/etc/systemd/system/<UNIT>.d/50-xinit.conf` | restart XWiki when it crashes, notify the crash, start the warm-up; `JVM_OPTS_APPEND` |
 | `xinit-watch@<instance>.service` and `.timer` | `xinit watch`, every minute, as `xinit` |
 | `xinit-act@<instance>.path` and `.service` | how the job, which is not root, gets XWiki restarted |
-| `xinit-notify@<instance>.service` | the notification of a crash |
+| `xinit-notify@<instance>.service` | the notification of a crash, as `xinit` |
 | `xinit-warmup@<instance>.service` | the first requests after each start of XWiki |
 | `/etc/xinit/credentials/<instance>.pgpass` or `.my.cnf` | the password of the db check, from `hibernate.cfg.xml`; 0600, owned by `xinit` |
 | `/etc/xinit/setup/<instance>.manifest` | the list of all this, for `--undo` |
@@ -75,8 +75,10 @@ uses `systemctl start xinit-watch@<instance>.service`, or `xinit watch --dry-run
   periodic job restarts it.
 - When the unit stops for another reason than being asked to, its `ExecStopPost=` starts
   `xinit-notify@<instance>.service`. This happens at once, not at the next run of the job. A
-  restart someone asks for is not notified, nor one the job asked for. For now the notification
-  is a line in the system log.
+  restart someone asks for is not notified, nor one the job asked for. The notification is an
+  entry in the system log, and a mail when `MAIL` is set: see
+  [notifications.md](notifications.md). Crashes that follow each other within `NOTIFY_REPEAT`
+  give one mail.
 - After each start, whoever started it, `ExecStartPost=` starts the warm-up: `xinit warmup`
   requests each URL of `WARMUP_URLS` until it answers 200, for `WARMUP_TIMEOUT` at most. Without
   `WARMUP_URLS` it requests the page of the http check. It does not delay the start of XWiki.
@@ -98,7 +100,7 @@ One run:
 1. takes the lock of the instance, or ends at once when another run holds it;
 2. runs the checks of `CHECKS`, and those of `ACT_ON`;
 3. counts the runs in a row in which a check of `ACT_ON` was `crit`;
-4. at `RESTART_AFTER` such runs, stores a report, then restarts XWiki.
+4. at `RESTART_AFTER` such runs, stores a report, restarts XWiki, then mails what it did.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -111,7 +113,10 @@ One run:
 
 What never causes a restart:
 - a `warn`: a starting or slow XWiki, a kill by the kernel's OOM killer;
-- an `unknown`: the count then stays as it is, neither raised nor cleared;
+- an `unknown`: the count then stays as it is, neither raised nor cleared. After
+  `RESTART_AFTER` runs in a row in which a check of `ACT_ON` could not tell, as when the host
+  name of `BASE_URL` no longer resolves, xinit says once that XWiki is no longer watched (reason
+  `cannot-check`);
 - the `db` check, unless `ACT_ON` names it: restarting XWiki does not repair its database.
 
 The output is the one of `xinit check`, plus what the run did. In JSON, the `watch` member:
@@ -127,11 +132,13 @@ The output is the one of `xinit check`, plus what the run did. In JSON, the `wat
 | `cooldown_remaining_seconds` | with the reason `cooldown` |
 | `restart_ok` | `true` or `false` after a restart, else `null` |
 | `report` | the archive of the report, else `null` |
+| `notification` | `{"event": …, "mail": …}` when this run notified something, else `null`: see [notifications.md](notifications.md) |
 
 | Reason | Action | Meaning |
 |---|---|---|
 | `healthy` | none | no check of `ACT_ON` is `crit` or `unknown`; the count starts again |
 | `unknown` | none | a check of `ACT_ON` could not tell |
+| `cannot-check` | none | a check of `ACT_ON` could not tell for `RESTART_AFTER` runs in a row: notified once, until a healthy run |
 | `counting` | none | failed, but not yet `RESTART_AFTER` times in a row |
 | `maintenance` | none | failed during a maintenance; the failure is still counted |
 | `maintenance-unknown` | none | failed, and the stored maintenance cannot be read |
@@ -149,8 +156,12 @@ The output is the one of `xinit check`, plus what the run did. In JSON, the `wat
   [reporting.md](reporting.md). It takes about 15 seconds. A JVM that is stopped or frozen gives
   no thread dump, and a report that cannot be written does not stop the restart.
 - What a run decides is recorded in the system log (`journalctl -t xinit`): each failed run, each
-  restart, and the first healthy run after failures. A restart and the `flapping` stop are also
-  notifications, which for now are lines in the same log.
+  restart, and the first healthy run after failures. A restart, the `flapping` stop and
+  `cannot-check` are also notifications, each with a report: an entry with fields in the same
+  log, and a mail when `MAIL` is set. The mail of a restart leaves after the restart, and a mail
+  that cannot be sent stops nothing.
+- While a maintenance is on, a run reminds of it: first when it has lasted
+  `MAINT_REMINDER_AFTER`, then every `MAINT_REMINDER`.
 
 ## Maintenance
 
@@ -178,6 +189,9 @@ xinit maint off
   (`90`, `15min`, `2h`, `1h30m`).
 - `maint` needs no detected installation: it works from the instance name alone.
 - `on` and `off` are recorded in the system log (`journalctl -t xinit`).
+- A maintenance that lasts is notified by `xinit watch`: after `MAINT_REMINDER_AFTER` (one
+  hour), then every `MAINT_REMINDER` (one hour; `0`: never). With the default two hours of a
+  maintenance, that is one reminder.
 - Exit codes: 0, 64 for a usage error, 3 when the state cannot be read or written.
 
 `--format json` prints, for every action:
@@ -200,6 +214,7 @@ for `status`, and never a wrong "off".
 |---|---|---|
 | `<STATE_DIR>/<instance>/maintenance` | the maintenance | `xinit maint` |
 | `<STATE_DIR>/<instance>/state` | the count of failed runs, the times of the restarts | `xinit watch` |
+| `<STATE_DIR>/<instance>/notify` | when each event was last mailed, and how many mails were held back since | `xinit watch`, `xinit notify` |
 | `<STATE_DIR>/<instance>/reports/report-*.tar.gz` | the last `REPORT_KEEP` reports | `xinit watch`, `xinit report` |
 | `<RUN_DIR>/<instance>/lock` | the lock of one `xinit watch` run | `xinit watch` |
 

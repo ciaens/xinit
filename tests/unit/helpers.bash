@@ -45,6 +45,8 @@ calls() { cat "$FAKEBIN/$1.calls" 2>/dev/null || true; }
 #       FAKE_CURL_EXIT / _ERROR  curl fails with this exit code and message
 #       FAKE_CURL_CODE / _TIME / _REDIRECT   the answer to a page request (default: 200 in 0.25s)
 #       FAKE_REST_CODE / _BODY   the answer to a /rest/ request (default: 200 and the version)
+#       FAKE_SMTP_EXIT / _ERROR  curl fails to send a mail, with this exit code and message
+#     Each mail curl is given is kept: see mails, mail and mail_options.
 #       FAKE_DF_FREE / FAKE_DF_IFREE   free blocks and inodes, out of 1000000 (default: 500000)
 #       FAKE_JOURNAL_UNIT=<file>     journalctl -u: the unit's messages (default: none)
 #       FAKE_JOURNAL_SYSTEM=<file>   journalctl: the kernel's and systemd's messages
@@ -127,6 +129,20 @@ use_fixture() {
   # curl: what xinit_http_get expects from the real one. The body goes to stdout unless
   # -o /dev/null is given, errors go to stderr, and the -w line comes last.
   fake curl '
+    # curl -q -sS --max-time <seconds> --config -: a mail, with its options on the standard input.
+    case " $* " in *" --config - "*)
+      n=$(($(cat "$FAKEBIN/mail.count" 2>/dev/null || echo 0) + 1))
+      echo "$n" >"$FAKEBIN/mail.count"
+      cat >"$FAKEBIN/mail-$n.config"
+      file="$(sed -n "s/^upload-file = \"\(.*\)\"\$/\1/p" "$FAKEBIN/mail-$n.config")"
+      cp "$file" "$FAKEBIN/mail-$n.eml"
+      stat -c %a "$file" >"$FAKEBIN/mail-$n.mode"
+      if [ -n "${FAKE_SMTP_EXIT:-}" ]; then
+        echo "curl: ($FAKE_SMTP_EXIT) ${FAKE_SMTP_ERROR:-Could not connect to server}" >&2
+        exit "$FAKE_SMTP_EXIT"
+      fi
+      exit 0 ;;
+    esac
     url="${!#}" body=1
     for arg in "$@"; do [ "$arg" = /dev/null ] && body=""; done
     if [ -n "${FAKE_CURL_EXIT:-}" ]; then
@@ -247,7 +263,27 @@ use_state() {
   XINIT_TEST_NOW="$NOW"
   mkdir -p "$XINIT_CONF_DIR/instances"
   export XINIT_CONF_DIR XINIT_STATE_DIR XINIT_RUN_DIR XINIT_TEST_NOW NOW
-  fake logger ''
+  # logger --journald reads the fields of the entry from its standard input: they are recorded
+  # with the calls, one per line.
+  fake logger 'if [ "$1" = --journald ]; then cat >>"$FAKEBIN/logger.calls"; fi'
+}
+
+# mails: how many mails xinit gave curl to send.
+mails() { cat "$FAKEBIN/mail.count" 2>/dev/null || echo 0; }
+
+# mail <n>: the nth mail, as curl was given it, without the CR at the end of its lines.
+mail() { tr -d '\r' <"$FAKEBIN/mail-$1.eml"; }
+
+# mail_header <n> <name>: a header of the nth mail.
+mail_header() { mail "$1" | sed -n "1,/^\$/s/^$2: //p"; }
+
+# mail_options <n>: the options curl read for the nth mail.
+mail_options() { cat "$FAKEBIN/mail-$1.config"; }
+
+# mail_attachment <n> <file>: decode the attachment of the nth mail into the file.
+mail_attachment() {
+  mail "$1" | awk '/^Content-Disposition: attachment/ { on = 1; next } on && /^--/ { on = 0 } on' |
+    base64 -d >"$2"
 }
 
 # conf <<EOF ... : write the configuration, $XINIT_CONF_DIR/xinit.conf.

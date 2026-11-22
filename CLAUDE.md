@@ -18,12 +18,13 @@ hardening.
   - `checks.md` is the reference of `xinit layout` and `xinit check`;
   - `acting.md` is the reference of `xinit setup`, `xinit watch` and `xinit maint`, and of the
     state and lock of an instance;
-  - `reporting.md` is the reference of `xinit report`.
+  - `reporting.md` is the reference of `xinit report`;
+  - `notifications.md` is the reference of the notifications: the journal entries and the mail.
 
 What exists: `xinit layout` and `xinit check` (Phase 1), which only read, `xinit maint`,
 `xinit watch` and `xinit setup` (Phase 2), with the commands the installed units run (`act`,
-`notify`, `warmup`), and `xinit report` (Phase 3, in progress: notifications are still lines in
-the system log).
+`notify`, `warmup`), and `xinit report` with the notifications by mail (Phase 3, in progress:
+webhook and metrics are still to do).
 
 Load the XWiki plugin from https://github.com/xwiki/xwiki-dev-llm (clone it, then
 `claude plugin marketplace add <clone>` and `claude plugin install xwiki@xwiki-dev-llm`). It holds
@@ -85,6 +86,10 @@ tests/fixtures/collect.sh                       # rebuild tests/fixtures/ from t
     never ends xinit itself (`xinit_report_build`).
   - A temporary file or directory is created with `mktemp`, for its owner only, and removed when
     the command ends, also when it fails.
+  - A function that removes temporary files at the end is registered with `xinit_on_exit`:
+    there is one `EXIT` trap, in `lib/xinit/core.sh`.
+  - What `curl` needs to send a mail goes on its standard input (`--config -`), after it was
+    checked: an address, a URL or a path never goes on its command line.
   - The time comes from `xinit_now`, so that tests can set it with `XINIT_TEST_NOW`.
   - `kill` is a bash builtin, which a unit test cannot replace: send signals with `xinit_signal`.
     A unit test must never signal a real process: the PIDs of the fixtures are not ours.
@@ -135,6 +140,12 @@ These are verified on XWiki 18.9.0 / 17.10 with the Debian packages. The details
   prefix included.
 - bash 5.2 reads `&` in the replacement of `${var//pattern/replacement}` as the matched text,
   unless the replacement is quoted.
+- `curl` sends a mail as the file is: it adds no CR, and only escapes a leading dot after a
+  CR LF. Without a path in the `smtp://` URL, it gives the server the name of the uploaded file
+  as its host name. It reads an SMTP login from `--netrc-file`.
+- `logger --journald` reads `FIELD=value` lines from its standard input, and succeeds without a
+  word when there is no journal.
+- bash keeps a `HOSTNAME` it finds in its environment: a unit test sets the host name that way.
 - Guests can read most pages, REST included. To check credentials, use
   `/bin/admin/XWiki/XWikiPreferences`: 200 for an admin, 403 for a logged-in user, 302 for a guest.
 

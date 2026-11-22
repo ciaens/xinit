@@ -42,7 +42,7 @@ Existing open issues and where they land:
 |---|---|---|
 | XINIT-2 multiple instances | 1 (layout), 2 (watch) | instance concept from Phase 1 |
 | XINIT-4 reports to several emails | 3 | `MAIL` list + `xinit report --send` |
-| XINIT-5 DNS support | 3 | DNS failure = `unknown`, not `crit` (no restart); DNS trace in report |
+| XINIT-5 DNS support | 3 | DNS failure = `unknown`, not `crit` (no restart); DNS trace in report; notified once when it lasts |
 | XINIT-6 ulimit on RedHat | 6 | becomes `LimitNOFILE=` in the drop-in, checked by `config` |
 | XINIT-7 rotate catalina.out | 3 | obsolete with journald; logrotate snippet for WAR installs logging to a file |
 | XINIT-10 PostgreSQL | 1 (check), 3 (report) | |

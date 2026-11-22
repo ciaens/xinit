@@ -16,6 +16,8 @@
   restart policy) and `xinit maint`, and of the state and lock of an instance.
 - [reporting.md](reporting.md): reference of `xinit report`: what the diagnostics archive holds,
   what its summary says of the thread dumps, and how secrets are kept out.
+- [notifications.md](notifications.md): reference of the notifications: the events, the fields
+  of the entries in the system log, and the mail.
 - [../CLAUDE.md](../CLAUDE.md): working rules for agents (commands, conventions, pitfalls).
 - [test-env.md](test-env.md): disposable, pre-provisioned XWiki instances for tests.
 - [TESTING.md](TESTING.md): how to run the tests (`tests/run.sh`), the agent procedure, the fault

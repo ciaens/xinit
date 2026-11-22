@@ -15,6 +15,10 @@ xinit report --output /root/wiki-report.tar.gz
 ```
 
 ```bash
+xinit report --send               # also mailed to MAIL, with the archive attached
+```
+
+```bash
 xinit report --format json
 ```
 
@@ -24,9 +28,12 @@ xinit report --format json
   replaced.
 - The archive is for its owner only (0600): a thread dump or a log line may hold what a user
   typed.
+- With `--send`, the summary is mailed to the addresses of `MAIL`, with the archive attached:
+  see [notifications.md](notifications.md). `-o MAIL=someone@example.org` sends one report to
+  someone else. Root mails the archive it built, also when the state belongs to another user.
 - The text output is the summary, then the path of the archive.
-- Exit codes: 0 when the archive is written, whatever the state of XWiki; 3 when it is not, or
-  when there is no installation; 64 for a usage error.
+- Exit codes: 0 when the archive is written, whatever the state of XWiki; 3 when it is not,
+  when there is no installation, or when `--send` could not send the mail; 64 for a usage error.
 - It takes about 15 seconds: three thread dumps, `THREADDUMP_INTERVAL` apart.
 
 | Key | Default | Meaning |
@@ -46,6 +53,7 @@ xinit report --format json
 | `oom` | `true` when the `oom` check is `warn` or `crit` |
 | `deadlock` | `true` when a thread dump shows a deadlock |
 | `thread_dumps` | how many thread dumps the JVM wrote, 0 to 3 |
+| `mail` | with `--send`: `sent` or `failed`; else `null` |
 | `sections` | for each section, `ok` or `skipped: <why>` |
 
 ## What is in the archive
